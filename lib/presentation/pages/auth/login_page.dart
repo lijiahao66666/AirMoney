@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../../services/auth_service.dart';
 import '../../providers/points_provider.dart';
@@ -60,6 +61,91 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  Future<void> _showGrantAnimation(BuildContext ctx, int points) async {
+    final fmt = NumberFormat('#,###');
+    await showGeneralDialog(
+      context: ctx,
+      barrierDismissible: true,
+      barrierLabel: 'grant',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 350),
+      transitionBuilder: (context, anim, _, child) {
+        return ScaleTransition(
+          scale: CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
+          child: FadeTransition(opacity: anim, child: child),
+        );
+      },
+      pageBuilder: (context, _, __) {
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: 260,
+              padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
+              decoration: BoxDecoration(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF2C2C2E)
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('🎉', style: TextStyle(fontSize: 40)),
+                  const SizedBox(height: 12),
+                  Text(
+                    '登录成功',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white
+                          : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '赠送初始积分',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white54
+                          : Colors.black45,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '+${fmt.format(points)}',
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF4FC3F7),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 38,
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF4FC3F7),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text('知道了', style: TextStyle(fontSize: 14)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _login() async {
     if (!_phoneValid || !_codeValid || _logging) return;
     setState(() {
@@ -75,6 +161,10 @@ class _LoginPageState extends State<LoginPage> {
     if (result.success) {
       context.read<PointsProvider>().setBalance(result.balance ?? 0);
       context.read<PointsProvider>().syncFromServer();
+      if (result.initialGrantedThisTime && mounted) {
+        final points = result.initialGrantPoints ?? 500000;
+        await _showGrantAnimation(context, points);
+      }
       if (mounted) Navigator.of(context).pop(true);
     } else {
       setState(() => _error = result.error ?? '登录失败');
@@ -103,7 +193,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              '登录可获赠积分，积分跨设备同步',
+              '登录赠送积分，积分跨设备同步',
               style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             ),
             const SizedBox(height: 32),

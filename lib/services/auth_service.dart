@@ -122,5 +122,13 @@ class AuthResult {
   final bool success;
   final String? error;
   final int? balance;
-  AuthResult({required this.success, this.error, this.balance});
+  final bool initialGrantedThisTime;
+  final int? initialGrantPoints;
+  AuthResult({
+    required this.success,
+    this.error,
+    this.balance,
+    this.initialGrantedThisTime = false,
+    this.initialGrantPoints,
+  });
 }
