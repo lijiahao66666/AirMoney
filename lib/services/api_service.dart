@@ -1,0 +1,198 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:uuid/uuid.dart';
+
+/// 与后端 API 交互（混元代理、积分、登录）
+/// 后端可与 AirRead 共用，或使用 AirMoney 独立 server
+class ApiService {
+  static const _prefDeviceId = 'device_id';
+
+  static String get proxyUrl => const String.fromEnvironment(
+        'AIRMONEY_API_PROXY_URL',
+        defaultValue: 'http://localhost:9001',
+      );
+
+  static String get apiKey => const String.fromEnvironment(
+        'AIRMONEY_API_KEY',
+        defaultValue: '',
+      );
+
+  static String _deviceId = '';
+
+  static String get deviceId => _deviceId;
+
+  static Future<void> initDeviceId() async {
+    if (_deviceId.isNotEmpty) return;
+    if (!kIsWeb) {
+      try {
+        final info = DeviceInfoPlugin();
+        if (defaultTargetPlatform == TargetPlatform.android) {
+          final android = await info.androidInfo;
+          _deviceId = android.id.isNotEmpty ? android.id : android.fingerprint;
+        } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+          final ios = await info.iosInfo;
+          _deviceId = ios.identifierForVendor ?? '';
+        }
+      } catch (e) {
+        debugPrint('[ApiService] device_info error: $e');
+      }
+    }
+    if (_deviceId.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = (prefs.getString(_prefDeviceId) ?? '').trim();
+      if (stored.isNotEmpty) {
+        _deviceId = stored;
+      } else {
+        _deviceId = const Uuid().v4();
+        await prefs.setString(_prefDeviceId, _deviceId);
+      }
+    }
+  }
+
+  static Map<String, String> headers({String? authToken}) {
+    final h = <String, String>{
+      'Content-Type': 'application/json; charset=utf-8',
+      'X-Device-Id': _deviceId,
+    };
+    if (apiKey.trim().isNotEmpty) h['X-Api-Key'] = apiKey;
+    if (authToken != null && authToken.isNotEmpty) {
+      h['X-Auth-Token'] = authToken;
+    }
+    return h;
+  }
+
+  /// 调用混元 ChatCompletions（非流式）
+  static Future<String> chatCompletions({
+    required List<Map<String, String>> messages,
+    String? authToken,
+  }) async {
+    final url = Uri.parse('$proxyUrl/');
+    final payload = {
+      'host': 'hunyuan.tencentcloudapi.com',
+      'service': 'hunyuan',
+      'action': 'ChatCompletions',
+      'version': '2023-09-01',
+      'region': 'ap-guangzhou',
+      'stream': false,
+      'payload': {
+        'Model': 'hunyuan-2.0-instruct-20251111',
+        'Stream': false,
+        'Messages': messages.map((m) => {
+              'Role': m['role']!,
+              'Content': m['content'] ?? '',
+            }).toList(),
+      },
+    };
+    final resp = await http
+        .post(
+          url,
+          headers: headers(authToken: authToken),
+          body: jsonEncode(payload),
+        )
+        .timeout(const Duration(seconds: 60));
+    if (resp.statusCode != 200) {
+      try {
+        final err = jsonDecode(resp.body);
+        final msg = err['message'] ?? err['error'] ?? resp.body;
+        throw ApiException(msg.toString());
+      } catch (e) {
+        if (e is ApiException) rethrow;
+        throw ApiException('请求失败: ${resp.statusCode}');
+      }
+    }
+    final decoded = jsonDecode(resp.body);
+    final choices = decoded['Choices'] ?? decoded['Response']?['Choices'];
+    if (choices is List && choices.isNotEmpty) {
+      final first = choices.first;
+      if (first is Map) {
+        final msg = first['Message'] ?? first;
+        final content = msg is Map ? msg['Content'] : null;
+        if (content != null) return content.toString();
+      }
+    }
+    return '';
+  }
+
+  /// 积分初始化（返回余额）
+  static Future<int> initPoints({String? authToken}) async {
+    final url = Uri.parse('$proxyUrl/points/init');
+    final resp = await http.post(
+      url,
+      headers: headers(authToken: authToken),
+      body: jsonEncode({}),
+    ).timeout(const Duration(seconds: 10));
+    if (resp.statusCode != 200) return 0;
+    final j = jsonDecode(resp.body);
+    final b = j['balance'];
+    return (b is num) ? b.toInt() : 0;
+  }
+
+  /// 获取积分余额
+  static Future<int> getPointsBalance({String? authToken}) async {
+    final url = Uri.parse('$proxyUrl/points/balance');
+    final resp = await http.post(
+      url,
+      headers: headers(authToken: authToken),
+      body: jsonEncode({}),
+    ).timeout(const Duration(seconds: 10));
+    if (resp.statusCode != 200) return 0;
+    final j = jsonDecode(resp.body);
+    final b = j['balance'];
+    return (b is num) ? b.toInt() : 0;
+  }
+
+  /// 签到
+  static Future<CheckinResult> checkin({String? authToken}) async {
+    final url = Uri.parse('$proxyUrl/checkin');
+    final resp = await http.post(
+      url,
+      headers: headers(authToken: authToken),
+      body: jsonEncode({}),
+    ).timeout(const Duration(seconds: 10));
+    final j = jsonDecode(resp.body);
+    if (resp.statusCode != 200) {
+      return CheckinResult(points: 0, alreadyDone: false, balance: null);
+    }
+    return CheckinResult(
+      points: (j['points'] as num?)?.toInt() ?? 0,
+      alreadyDone: j['alreadyDone'] == true,
+      balance: (j['balance'] as num?)?.toInt(),
+    );
+  }
+
+  /// 签到状态
+  static Future<bool> getCheckinStatus({String? authToken}) async {
+    final url = Uri.parse('$proxyUrl/checkin/status');
+    final resp = await http.post(
+      url,
+      headers: headers(authToken: authToken),
+      body: jsonEncode({}),
+    ).timeout(const Duration(seconds: 10));
+    if (resp.statusCode != 200) return false;
+    final j = jsonDecode(resp.body);
+    return j['checkedInToday'] == true;
+  }
+
+  static bool get hasProxyUrl => proxyUrl.trim().isNotEmpty;
+}
+
+class ApiException implements Exception {
+  final String message;
+  ApiException(this.message);
+  @override
+  String toString() => message;
+}
+
+class CheckinResult {
+  final int points;
+  final bool alreadyDone;
+  final int? balance;
+  CheckinResult({
+    required this.points,
+    required this.alreadyDone,
+    this.balance,
+  });
+}
