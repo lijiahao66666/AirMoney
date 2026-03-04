@@ -10,5 +10,5 @@ if ($UseIpMode) {
   $PROXY_URL = "https://money.air-inc.com/api"
 }
 
-# API Key（与 server/.env 的 API_KEY 一致）
-$API_KEY = ""
+# API Key（与 server/.env 的 API_KEY 一致，否则签到等接口会返回 401）
+$API_KEY = "af9a7d9ac145f539c84616012f9398b121cee1ad65005f3fc055f056aa4fd3fc"

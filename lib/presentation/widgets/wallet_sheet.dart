@@ -203,9 +203,7 @@ class _WalletSheetContentState extends State<_WalletSheetContent> {
                         }
                       }
                     } else {
-                      final success = await Navigator.of(context).push<bool>(
-                        MaterialPageRoute(builder: (_) => const LoginPage()),
-                      );
+                      final success = await LoginPage.show(context);
                       if (success == true && mounted) {
                         widget.onBalanceChanged();
                         await _refreshBalance();
@@ -252,7 +250,7 @@ class _WalletSheetContentState extends State<_WalletSheetContent> {
           const SizedBox(height: 16),
           Center(
             child: Text(
-              '哎呀，钱！v1.0 - 少花点，存多点',
+              '哎呀，钱！- 少花点，存多点',
               style: TextStyle(fontSize: 12, color: cs.onSurface.withValues(alpha: 0.5)),
             ),
           ),

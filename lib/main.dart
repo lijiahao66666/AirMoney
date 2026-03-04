@@ -7,12 +7,14 @@ import 'presentation/providers/bill_provider.dart';
 import 'presentation/providers/points_provider.dart';
 import 'services/api_service.dart';
 import 'services/auth_service.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await ApiService.initDeviceId();
   await AuthService.init();
+  await NotificationService.init();
   runApp(
     MultiProvider(
       providers: [

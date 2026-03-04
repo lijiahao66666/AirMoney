@@ -5,7 +5,6 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/constants.dart';
 import '../../../data/models/bill.dart';
 import '../../providers/bill_provider.dart';
-import '../analysis/single_analysis_page.dart';
 
 class AddBillPage extends StatefulWidget {
   const AddBillPage({super.key});
@@ -61,14 +60,6 @@ class _AddBillPageState extends State<AddBillPage> {
       await context.read<BillProvider>().addBill(bill);
       if (mounted) {
         Navigator.of(context).pop();
-        // 仅支出记完一笔后弹出反省分析
-        if (_type == BillType.expense) {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => SingleAnalysisPage(bill: bill),
-            ),
-          );
-        }
       }
     } finally {
       if (mounted) setState(() => _saving = false);

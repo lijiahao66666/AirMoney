@@ -8,6 +8,16 @@ import '../../providers/points_provider.dart';
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
+  /// 以 BottomSheet 形式展示登录（固定高度，不全屏）
+  static Future<bool?> show(BuildContext context) async {
+    return showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const LoginPage(),
+    );
+  }
+
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
@@ -173,17 +183,47 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('登录'),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.of(context).pop(false),
-        ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+      child: SafeArea(
         child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(false),
+                ),
+                const Expanded(
+                  child: Text(
+                    '登录',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                const SizedBox(width: 48),
+              ],
+            ),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.65,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 32),
@@ -253,6 +293,10 @@ class _LoginPageState extends State<LoginPage> {
                       child: CircularProgressIndicator(color: Colors.white),
                     )
                   : const Text('登录'),
+            ),
+          ],
+        ),
+      ),
             ),
           ],
         ),

@@ -152,10 +152,18 @@ class ApiService {
       headers: headers(authToken: authToken),
       body: jsonEncode({}),
     ).timeout(const Duration(seconds: 10));
-    final j = jsonDecode(resp.body);
     if (resp.statusCode != 200) {
-      return CheckinResult(points: 0, alreadyDone: false, balance: null);
+      String msg = '签到失败';
+      try {
+        final j = jsonDecode(resp.body);
+        msg = j['message'] ?? j['error'] ?? msg;
+      } catch (_) {}
+      if (resp.statusCode == 401) {
+        throw ApiException('未授权：请先登录，或检查 API 配置');
+      }
+      throw ApiException(msg);
     }
+    final j = jsonDecode(resp.body);
     return CheckinResult(
       points: (j['points'] as num?)?.toInt() ?? 0,
       alreadyDone: j['alreadyDone'] == true,

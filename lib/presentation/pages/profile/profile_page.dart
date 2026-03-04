@@ -29,10 +29,11 @@ class ProfilePage extends StatelessWidget {
               leading: const Icon(Icons.login),
               title: const Text('登录'),
               subtitle: const Text('登录可获赠积分，跨设备同步'),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const LoginPage()),
-                );
+              onTap: () async {
+                final success = await LoginPage.show(context);
+                if (success == true && context.mounted) {
+                  context.read<PointsProvider>().syncFromServer();
+                }
               },
             ),
           if (AuthService.isLoggedIn)
@@ -86,7 +87,7 @@ class ProfilePage extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('关于'),
-            subtitle: const Text('哎呀，钱！v1.0 - 少花点，存多点'),
+            subtitle: const Text('哎呀，钱！- 少花点，存多点'),
           ),
         ],
       ),
