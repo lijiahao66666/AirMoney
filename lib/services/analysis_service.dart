@@ -2,7 +2,7 @@ import '../data/models/bill.dart';
 import 'api_service.dart';
 import 'auth_service.dart';
 
-/// 单次分析：记完一笔后调用
+/// 单次分析：从最近记录中选择一笔进行深度分析
 Future<String> analyzeSingleBill(Bill bill, {Map<String, double>? categoryTotals7d}) async {
   final sysPrompt = '''你是「哎呀，钱！」的消费分析顾问。主打「少花点，存多点」。
 

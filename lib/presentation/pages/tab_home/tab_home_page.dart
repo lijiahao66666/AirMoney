@@ -55,9 +55,12 @@ class _TabHomePageState extends State<TabHomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Center(
+        title: SizedBox(
+          width: double.infinity,
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               ShaderMask(
                 blendMode: BlendMode.srcIn,
@@ -68,7 +71,7 @@ class _TabHomePageState extends State<TabHomePage> {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ).createShader(bounds),
-                child: Text(
+                child: const Text(
                   '哎呀，钱！',
                   style: TextStyle(
                     fontSize: 20,
@@ -76,7 +79,6 @@ class _TabHomePageState extends State<TabHomePage> {
                     letterSpacing: 0.5,
                     color: Colors.white,
                   ),
-                  textAlign: TextAlign.center,
                 ),
               ),
               const SizedBox(height: 2),
@@ -87,7 +89,6 @@ class _TabHomePageState extends State<TabHomePage> {
                   fontWeight: FontWeight.normal,
                   color: (isDark ? Colors.white70 : AppColors.deepText).withOpacity(0.7),
                 ),
-                textAlign: TextAlign.center,
               ),
             ],
           ),
@@ -111,10 +112,11 @@ class _TabHomePageState extends State<TabHomePage> {
                 weekIncome: _weekIncome,
                 cardBg: cardBg,
                 isDark: isDark,
-                onAddTap: () {
-                  Navigator.of(context).push(
+                onAddTap: () async {
+                  await Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const AddBillPage()),
                   );
+                  if (mounted) await _loadTotals();
                 },
               ),
               const SizedBox(height: 20),
@@ -150,10 +152,11 @@ class _TabHomePageState extends State<TabHomePage> {
                     );
                   }
                   if (bp.recentBills.isEmpty) {
-                    return _EmptyHint(onAdd: () {
-                      Navigator.of(context).push(
+                    return _EmptyHint(onAdd: () async {
+                      await Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const AddBillPage()),
                       );
+                      if (mounted) await _loadTotals();
                     });
                   }
                   return ListView.builder(

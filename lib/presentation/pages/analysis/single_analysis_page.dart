@@ -67,7 +67,7 @@ class _SingleAnalysisPageState extends State<SingleAnalysisPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('分析'),
+        title: const Text('单次分析'),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.of(context).pop(),

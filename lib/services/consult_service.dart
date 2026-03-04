@@ -1,18 +1,25 @@
 import 'api_service.dart';
 import 'auth_service.dart';
 
-/// 咨询：多轮对话，每次传入完整历史
-/// conversationHistory: [{role: 'user'|'assistant', content: '...'}, ...]
-Future<String> consult({
+/// 咨询：流式多轮对话，思考模型 + 搜索增强
+/// 提示词要求：像对话一样一次只问一个问题，不要一次抛出多个问题
+Stream<ConsultStreamChunk> consultStream({
   required List<Map<String, String>> conversationHistory,
   Map<String, double>? recentCategorySpending,
-}) async {
-  const sysPrompt = '''你是「哎呀，钱！」的省钱顾问，站在用户钱包这边。主打「不花行不行？」。
+}) async* {
+  const sysPrompt = '''你是「哎呀，钱！」的省钱顾问，主打「不花行不行？」。站在用户钱包这边。
 
-当用户说想买某样东西时：
-1. 先问3-5个关键问题（可一次问完）：已有替代品吗？主要用途？预算？不买会怎样？是否必须马上买？
-2. 根据回答给出结论：建议不买/可以买/再等等
-3. 若要买：给出价位、类型建议
+重要：对话方式
+- 每次只问一个关键问题，等用户回答后再问下一个，像真人聊天一样。
+- 不要一次抛出多个问题（如「1.xxx 2.xxx 3.xxx」），这样用户不知道先答哪个。
+- 根据用户回答逐步深入，最后给出建议：可以不买/可以买/再等等。
+
+建议的问题顺序（每次只问一个）：
+1. 你主要想用来干什么？
+2. 家里有没有能替代的？
+3. 不买会怎样？能忍吗？
+4. 必须马上买吗？等打折行不行？
+5. 预算大概多少？
 
 要求：
 - 敢于说「可以不买」「再等等」
@@ -36,13 +43,37 @@ Future<String> consult({
     messages.add({'role': role, 'content': content});
   }
   if (messages.length == 1) {
-    messages.add({
-      'role': 'user',
-      'content': '用户还没有输入，请等待。',
-    });
+    messages.add({'role': 'user', 'content': '用户还没有输入，请等待。'});
   }
-  return ApiService.chatCompletions(
+
+  final stream = ApiService.chatCompletionsStream(
     messages: messages,
     authToken: AuthService.token.isNotEmpty ? AuthService.token : null,
   );
+
+  await for (final chunk in stream) {
+    yield ConsultStreamChunk(
+      content: chunk.content,
+      reasoningContent: chunk.reasoningContent,
+      isReasoning: chunk.isReasoning,
+      isComplete: chunk.isComplete,
+      pointsBalance: chunk.pointsBalance,
+    );
+  }
+}
+
+class ConsultStreamChunk {
+  final String content;
+  final String? reasoningContent;
+  final bool isReasoning;
+  final bool isComplete;
+  final int? pointsBalance;
+
+  ConsultStreamChunk({
+    required this.content,
+    this.reasoningContent,
+    this.isReasoning = false,
+    this.isComplete = false,
+    this.pointsBalance,
+  });
 }
