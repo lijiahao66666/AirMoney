@@ -42,7 +42,7 @@ class _SingleAnalysisPageState extends State<SingleAnalysisPage> {
       final bp = context.read<BillProvider>();
       final end = widget.bill.date;
       final start = end.subtract(const Duration(days: 7));
-      final catTotals = await bp.getCategoryTotalsInRange(start, end);
+      final catTotals = await bp.getCategoryTotalsInRange(start, end, type: BillType.expense);
       final cat7d = catTotals[widget.bill.category];
       final map = cat7d != null ? {widget.bill.category: cat7d} : null;
       final text = await analyzeSingleBill(widget.bill, categoryTotals7d: map);

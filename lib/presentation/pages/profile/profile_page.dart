@@ -12,7 +12,7 @@ class ProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('我的')),
+      appBar: AppBar(title: const Text('设置')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -86,7 +86,7 @@ class ProfilePage extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('关于'),
-            subtitle: const Text('哎呀钱 v1.0 - 在意你的每一笔钱'),
+            subtitle: const Text('哎呀，钱！v1.0 - 少花点，存多点'),
           ),
         ],
       ),

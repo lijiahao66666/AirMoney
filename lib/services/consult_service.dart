@@ -7,7 +7,7 @@ Future<String> consult({
   required List<Map<String, String>> conversationHistory,
   Map<String, double>? recentCategorySpending,
 }) async {
-  const sysPrompt = '''你是「哎呀钱」的省钱顾问，站在用户钱包这边。
+  const sysPrompt = '''你是「哎呀，钱！」的省钱顾问，站在用户钱包这边。主打「不花行不行？」。
 
 当用户说想买某样东西时：
 1. 先问3-5个关键问题（可一次问完）：已有替代品吗？主要用途？预算？不买会怎样？是否必须马上买？
@@ -17,7 +17,7 @@ Future<String> consult({
 要求：
 - 敢于说「可以不买」「再等等」
 - 不推销，不讨好
-- 语气直接、友好
+- 语气直接、友好、带点幽默
 - 若附带用户近期同类支出，可适度提醒''';
 
   final messages = <Map<String, String>>[

@@ -5,7 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/constants.dart';
 import '../../../data/models/bill.dart';
 import '../../providers/bill_provider.dart';
-import '../../../presentation/pages/analysis/single_analysis_page.dart';
+import '../analysis/single_analysis_page.dart';
 
 class AddBillPage extends StatefulWidget {
   const AddBillPage({super.key});
@@ -17,10 +17,20 @@ class AddBillPage extends StatefulWidget {
 class _AddBillPageState extends State<AddBillPage> {
   final _amountController = TextEditingController();
   final _noteController = TextEditingController();
-  String _category = AppConstants.categories.first;
+  BillType _type = BillType.expense;
+  late String _category;
   String _payMethod = AppConstants.payMethods.first;
   DateTime _date = DateTime.now();
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _category = AppConstants.expenseCategories.first;
+  }
+
+  List<String> get _categories =>
+      _type == BillType.expense ? AppConstants.expenseCategories : AppConstants.incomeCategories;
 
   @override
   void dispose() {
@@ -46,19 +56,30 @@ class _AddBillPageState extends State<AddBillPage> {
         note: _noteController.text.trim(),
         payMethod: _payMethod,
         date: _date,
+        type: _type,
       );
       await context.read<BillProvider>().addBill(bill);
       if (mounted) {
         Navigator.of(context).pop();
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => SingleAnalysisPage(bill: bill),
-          ),
-        );
+        // 仅支出记完一笔后弹出反省分析
+        if (_type == BillType.expense) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => SingleAnalysisPage(bill: bill),
+            ),
+          );
+        }
       }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  void _onTypeChanged(BillType t) {
+    setState(() {
+      _type = t;
+      _category = _categories.first;
+    });
   }
 
   @override
@@ -76,6 +97,25 @@ class _AddBillPageState extends State<AddBillPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const Text('类型', style: TextStyle(fontSize: 14, color: AppColors.neutralGrey)),
+            const SizedBox(height: 8),
+            SegmentedButton<BillType>(
+              segments: const [
+                ButtonSegment(
+                  value: BillType.expense,
+                  label: Text('支出'),
+                  icon: Icon(Icons.trending_down, size: 18),
+                ),
+                ButtonSegment(
+                  value: BillType.income,
+                  label: Text('收入'),
+                  icon: Icon(Icons.trending_up, size: 18),
+                ),
+              ],
+              selected: {_type},
+              onSelectionChanged: (s) => _onTypeChanged(s.first),
+            ),
+            const SizedBox(height: 24),
             const Text('金额', style: TextStyle(fontSize: 14, color: AppColors.neutralGrey)),
             const SizedBox(height: 8),
             TextField(
@@ -96,7 +136,7 @@ class _AddBillPageState extends State<AddBillPage> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: AppConstants.categories.map((c) {
+              children: _categories.map((c) {
                 final selected = _category == c;
                 return ChoiceChip(
                   label: Text(c),

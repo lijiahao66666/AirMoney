@@ -1,5 +1,6 @@
 class AppConstants {
-  static const List<String> categories = [
+  /// 支出分类
+  static const List<String> expenseCategories = [
     '餐饮',
     '交通',
     '购物',
@@ -9,6 +10,19 @@ class AppConstants {
     '教育',
     '其他',
   ];
+
+  /// 收入分类
+  static const List<String> incomeCategories = [
+    '工资',
+    '奖金',
+    '兼职',
+    '理财收益',
+    '红包',
+    '其他',
+  ];
+
+  /// 支出分类（兼容旧引用）
+  static List<String> get categories => expenseCategories;
 
   static const List<String> payMethods = [
     '微信',
@@ -26,6 +40,11 @@ class AppConstants {
     '居家': 'home',
     '医疗': 'local_hospital',
     '教育': 'school',
+    '工资': 'work',
+    '奖金': 'emoji_events',
+    '兼职': 'handyman',
+    '理财收益': 'trending_up',
+    '红包': 'redeem',
     '其他': 'more_horiz',
   };
 }

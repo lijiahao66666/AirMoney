@@ -4,6 +4,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../services/consult_service.dart';
 import '../../providers/bill_provider.dart';
 import '../../providers/points_provider.dart';
+import '../../widgets/wallet_sheet.dart';
 
 class ConsultPage extends StatefulWidget {
   const ConsultPage({super.key});
@@ -30,8 +31,10 @@ class _ConsultPageState extends State<ConsultPage> {
     if (text.isEmpty || _loading) return;
     final points = context.read<PointsProvider>().balance;
     if (points <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('积分不足，请先登录或签到')),
+      WalletSheet.show(
+        context,
+        points,
+        () => context.read<PointsProvider>().syncFromServer(),
       );
       return;
     }
@@ -94,7 +97,7 @@ class _ConsultPageState extends State<ConsultPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('买前咨询'),
+        title: const Text('不花行不行？'),
         actions: [
           Consumer<PointsProvider>(
             builder: (_, pp, __) => Padding(
@@ -153,7 +156,7 @@ class _ConsultPageState extends State<ConsultPage> {
                     child: TextField(
                       controller: _controller,
                       decoration: InputDecoration(
-                        hintText: '我想买...',
+                        hintText: '我想买……',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
                         ),
@@ -236,13 +239,20 @@ class _EmptyHint extends StatelessWidget {
             Icon(Icons.shopping_bag_outlined, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
-              '想买什么？输入后我会帮你分析',
+              '一定要花这个钱吗？不花行不行？',
               style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '输入想买的东西，我来帮你冷静一下',
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               '例：我想买一个机械键盘',
-              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+              style: TextStyle(fontSize: 13, color: Colors.grey[400]),
             ),
           ],
         ),

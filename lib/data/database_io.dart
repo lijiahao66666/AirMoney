@@ -14,7 +14,7 @@ class _SqfliteBillStorage implements BillStorage {
     final dbPath = join(dir, 'airmoney.db');
     _db = await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE bills (
@@ -24,10 +24,16 @@ class _SqfliteBillStorage implements BillStorage {
             note TEXT,
             pay_method TEXT,
             date TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            type TEXT DEFAULT 'expense'
           )
         ''');
         await db.execute('CREATE INDEX idx_bills_date ON bills(date)');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2 && newVersion >= 2) {
+          await db.execute("ALTER TABLE bills ADD COLUMN type TEXT DEFAULT 'expense'");
+        }
       },
     );
     return _db!;

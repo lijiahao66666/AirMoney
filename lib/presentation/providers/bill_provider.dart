@@ -27,35 +27,52 @@ class BillProvider extends ChangeNotifier {
     return id;
   }
 
-  Future<double> getTodayTotal() async {
+  Future<double> getTodayExpense() async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
     final end = start.add(const Duration(days: 1));
-    return _repo.getTotalInRange(start, end);
+    return _repo.getTotalInRange(start, end, type: BillType.expense);
   }
 
-  Future<double> getWeekTotal() async {
+  Future<double> getWeekExpense() async {
     final now = DateTime.now();
     final weekday = now.weekday;
     final start = DateTime(now.year, now.month, now.day)
         .subtract(Duration(days: weekday - 1));
     final end = start.add(const Duration(days: 7));
-    return _repo.getTotalInRange(start, end);
+    return _repo.getTotalInRange(start, end, type: BillType.expense);
   }
 
-  Future<List<Bill>> getBillsInRange(DateTime start, DateTime end) async {
-    return _repo.getBillsInRange(start, end);
+  Future<double> getTodayIncome() async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day);
+    final end = start.add(const Duration(days: 1));
+    return _repo.getTotalInRange(start, end, type: BillType.income);
+  }
+
+  Future<double> getWeekIncome() async {
+    final now = DateTime.now();
+    final weekday = now.weekday;
+    final start = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: weekday - 1));
+    final end = start.add(const Duration(days: 7));
+    return _repo.getTotalInRange(start, end, type: BillType.income);
+  }
+
+  Future<List<Bill>> getBillsInRange(DateTime start, DateTime end, {BillType? type}) async {
+    return _repo.getBillsInRange(start, end, type: type);
   }
 
   Future<Map<String, double>> getCategoryTotalsInRange(
     DateTime start,
-    DateTime end,
-  ) async {
-    return _repo.getCategoryTotalsInRange(start, end);
+    DateTime end, {
+    BillType type = BillType.expense,
+  }) async {
+    return _repo.getCategoryTotalsInRange(start, end, type: type);
   }
 
-  Future<double> getTotalInRange(DateTime start, DateTime end) async {
-    return _repo.getTotalInRange(start, end);
+  Future<double> getTotalInRange(DateTime start, DateTime end, {BillType? type}) async {
+    return _repo.getTotalInRange(start, end, type: type);
   }
 
   Future<Bill?> getLatestBill() async {

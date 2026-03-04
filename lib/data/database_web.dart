@@ -43,10 +43,10 @@ class _WebBillStorage implements BillStorage {
     final nextId = _bills.isEmpty
         ? 1
         : (_bills.map((m) => m['id'] as int? ?? 0).reduce((a, b) => a > b ? a : b) + 1);
-    _bills.add({
-      ...bill.toMap(),
-      'id': nextId,
-    });
+    final m = bill.toMap();
+    m['id'] = nextId;
+    if (!m.containsKey('type')) m['type'] = 'expense';
+    _bills.add(m);
     await _persist();
     return nextId;
   }
@@ -70,6 +70,12 @@ class _WebBillStorage implements BillStorage {
               (endStr.isEmpty || d.compareTo(endStr) <= 0);
         }).toList();
       }
+      if (where.contains('type')) {
+        final typeVal = whereArgs.length >= 3 ? whereArgs[2].toString() : null;
+        if (typeVal != null) {
+          list = list.where((m) => (m['type'] as String? ?? 'expense') == typeVal).toList();
+        }
+      }
     }
     if (orderBy != null) {
       if (orderBy.contains('created_at') && orderBy.contains('DESC')) {
@@ -90,11 +96,16 @@ class _WebBillStorage implements BillStorage {
     if (sql.contains('SUM(amount)') && sql.contains('WHERE')) {
       final startStr = args != null && args.isNotEmpty ? args[0].toString() : '';
       final endStr = args != null && args.length > 1 ? args[1].toString() : '';
+      final filterType = args != null && args.length >= 3 ? args[2].toString() : null;
       double total = 0;
       for (final m in _bills) {
         final d = m['date'] as String? ?? '';
         if ((startStr.isEmpty || d.compareTo(startStr) >= 0) &&
             (endStr.isEmpty || d.compareTo(endStr) <= 0)) {
+          if (filterType != null) {
+            final t = m['type'] as String? ?? 'expense';
+            if (t != filterType) continue;
+          }
           total += (m['amount'] as num?)?.toDouble() ?? 0;
         }
       }
@@ -103,11 +114,16 @@ class _WebBillStorage implements BillStorage {
     if (sql.contains('GROUP BY category')) {
       final startStr = args != null && args.isNotEmpty ? args[0].toString() : '';
       final endStr = args != null && args.length > 1 ? args[1].toString() : '';
+      final filterType = args != null && args.length >= 3 ? args[2].toString() : null;
       final map = <String, double>{};
       for (final m in _bills) {
         final d = m['date'] as String? ?? '';
         if ((startStr.isEmpty || d.compareTo(startStr) >= 0) &&
             (endStr.isEmpty || d.compareTo(endStr) <= 0)) {
+          if (filterType != null) {
+            final t = m['type'] as String? ?? 'expense';
+            if (t != filterType) continue;
+          }
           final cat = m['category'] as String? ?? '其他';
           map[cat] = (map[cat] ?? 0) + ((m['amount'] as num?)?.toDouble() ?? 0);
         }

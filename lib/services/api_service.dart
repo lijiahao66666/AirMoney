@@ -176,6 +176,19 @@ class ApiService {
     return j['checkedInToday'] == true;
   }
 
+  /// 获取远程配置（签到积分、初始赠送等）
+  static Future<Map<String, dynamic>> getConfig() async {
+    final base = proxyUrl.trim().endsWith('/') ? proxyUrl : '$proxyUrl/';
+    final url = Uri.parse('${base}config');
+    final resp = await http.get(url, headers: headers()).timeout(const Duration(seconds: 10));
+    if (resp.statusCode != 200) return {};
+    try {
+      return Map<String, dynamic>.from(jsonDecode(resp.body));
+    } catch (_) {
+      return {};
+    }
+  }
+
   static bool get hasProxyUrl => proxyUrl.trim().isNotEmpty;
 }
 
