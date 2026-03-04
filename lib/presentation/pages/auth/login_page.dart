@@ -1,7 +1,11 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+
+import '../../../core/theme/app_colors.dart';
 import '../../../services/auth_service.dart';
 import '../../providers/points_provider.dart';
 
@@ -183,123 +187,183 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).viewInsets.bottom;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
+        color: isDark ? AppColors.darkBg : AppColors.backgroundLight,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 16,
+        bottom: bottomPadding + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 标题
+          Text(
+            '登录哎呀，钱！',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black87,
             ),
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(false),
-                ),
-                const Expanded(
-                  child: Text(
-                    '登录',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '登录赠送积分，积分跨设备同步',
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.white54 : Colors.black45,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // 手机号输入
+          TextField(
+            controller: _phoneController,
+            keyboardType: TextInputType.phone,
+            maxLength: 11,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            style: TextStyle(
+              fontSize: 14,
+              color: isDark ? Colors.white : Colors.black87,
+            ),
+            decoration: InputDecoration(
+              labelText: '手机号',
+              labelStyle: const TextStyle(fontSize: 13),
+              hintText: '请输入11位手机号',
+              hintStyle: const TextStyle(fontSize: 13),
+              counterText: '',
+              prefixIcon: const Icon(Icons.phone_android, size: 18),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              filled: true,
+              fillColor: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.grey.shade50,
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+
+          // 验证码输入 + 发送按钮
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _codeController,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDark ? Colors.white : Colors.black87,
                   ),
-                ),
-                const SizedBox(width: 48),
-              ],
-            ),
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.65,
-              ),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 32),
-            const Text(
-              '手机号验证码登录',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '登录赠送积分，积分跨设备同步',
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-            ),
-            const SizedBox(height: 32),
-            TextField(
-              controller: _phoneController,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: '手机号',
-                hintText: '请输入11位手机号',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _codeController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '验证码',
-                      hintText: '请输入验证码',
-                      border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: '验证码',
+                    labelStyle: const TextStyle(fontSize: 13),
+                    hintText: '请输入验证码',
+                    hintStyle: const TextStyle(fontSize: 13),
+                    counterText: '',
+                    prefixIcon: const Icon(Icons.lock_outline, size: 18),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
+                    filled: true,
+                    fillColor: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.grey.shade50,
                   ),
+                  onChanged: (_) => setState(() {}),
                 ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 120,
-                  child: FilledButton(
-                    onPressed: (_phoneValid && !_sending && _countdown == 0)
-                        ? _sendCode
-                        : null,
-                    child: Text(_countdown > 0 ? '${_countdown}s' : '获取验证码'),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                height: 42,
+                child: ElevatedButton(
+                  onPressed: (_phoneValid && !_sending && _countdown <= 0)
+                      ? _sendCode
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
                   ),
+                  child: _sending
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(
+                          _countdown > 0 ? '${_countdown}s' : '获取验证码',
+                          style: const TextStyle(fontSize: 13),
+                        ),
                 ),
-              ],
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 16),
-              Text(
-                _error!,
-                style: const TextStyle(color: Colors.red, fontSize: 14),
               ),
             ],
-            const SizedBox(height: 32),
-            FilledButton(
-              onPressed: (_phoneValid && _codeValid && !_logging) ? _login : null,
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.green,
-                padding: const EdgeInsets.symmetric(vertical: 16),
+          ),
+
+          // 错误提示
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+            ),
+          ],
+
+          const SizedBox(height: 18),
+
+          // 登录按钮
+          SizedBox(
+            height: 42,
+            child: ElevatedButton(
+              onPressed: (_phoneValid && _codeValid && !_logging)
+                  ? _login
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4FC3F7),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                elevation: 0,
               ),
               child: _logging
                   ? const SizedBox(
-                      height: 24,
-                      width: 24,
-                      child: CircularProgressIndicator(color: Colors.white),
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(Colors.white),
+                      ),
                     )
-                  : const Text('登录'),
+                  : const Text(
+                      '登录',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
             ),
-          ],
-        ),
-      ),
+          ),
+
+          const SizedBox(height: 8),
+          Text(
+            '未注册的手机号将自动创建账号',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 11,
+              color: isDark ? Colors.white38 : Colors.black26,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

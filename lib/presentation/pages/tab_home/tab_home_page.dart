@@ -25,6 +25,8 @@ class _TabHomePageState extends State<TabHomePage> {
   double _weekExpense = 0;
   double _todayIncome = 0;
   double _weekIncome = 0;
+  static const int _recentBillsMaxShown = 10;
+  bool _recentBillsExpanded = false;
 
   @override
   void initState() {
@@ -159,14 +161,55 @@ class _TabHomePageState extends State<TabHomePage> {
                       if (mounted) await _loadTotals();
                     });
                   }
-                  return ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: bp.recentBills.length,
-                    itemBuilder: (_, i) {
-                      final b = bp.recentBills[i];
-                      return _BillTile(bill: b);
-                    },
+                  final total = bp.recentBills.length;
+                  final showCount = _recentBillsExpanded
+                      ? total
+                      : total.clamp(0, _recentBillsMaxShown);
+                  final hasMore = total > _recentBillsMaxShown && !_recentBillsExpanded;
+
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: showCount,
+                        itemBuilder: (_, i) {
+                          final b = bp.recentBills[i];
+                          return _BillTile(bill: b);
+                        },
+                      ),
+                      if (hasMore)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: InkWell(
+                            onTap: () => setState(() => _recentBillsExpanded = true),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.expand_more,
+                                    size: 20,
+                                    color: AppColors.primaryGreen,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '继续查看（共 $total 条）',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: AppColors.primaryGreen,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   );
                 },
               ),

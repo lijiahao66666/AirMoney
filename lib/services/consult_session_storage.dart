@@ -97,12 +97,12 @@ class ConsultSessionStorage {
   }
 
   /// 追加消息并保存
-  static Future<void> appendMessage(String sessionId, String role, String content) async {
+  static Future<void> appendMessage(String sessionId, String role, String content, {String? reasoning}) async {
     final idx = _sessions.indexWhere((s) => s.id == sessionId);
     if (idx < 0) return;
     final s = _sessions[idx];
     final updated = s.copyWith(
-      messages: [...s.messages, ConsultMessage(role: role, content: content)],
+      messages: [...s.messages, ConsultMessage(role: role, content: content, reasoning: reasoning)],
       updatedAt: DateTime.now(),
       title: role == 'user' && s.title == '新对话'
           ? (content.length > 20 ? '${content.substring(0, 20)}...' : content)

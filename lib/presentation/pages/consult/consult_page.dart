@@ -78,6 +78,8 @@ class _ConsultPageState extends State<ConsultPage> {
   }
 
   Future<void> _createNewSession() async {
+    // 当前对话为空时不开新会话，避免历史里一堆空对话
+    if (_messages.isEmpty && _streamingContent.isEmpty) return;
     final s = await ConsultSessionStorage.createNewSession();
     if (mounted) {
       setState(() {
@@ -113,9 +115,9 @@ class _ConsultPageState extends State<ConsultPage> {
     await ConsultSessionStorage.appendMessage(_currentSession!.id, 'user', text);
     _scrollToBottom();
 
+    final bp = context.read<BillProvider>();
     Map<String, double>? recentSpending;
     try {
-      final bp = context.read<BillProvider>();
       final now = DateTime.now();
       final start = now.subtract(const Duration(days: 30));
       recentSpending = await bp.getCategoryTotalsInRange(start, now, type: BillType.expense);
@@ -144,8 +146,17 @@ class _ConsultPageState extends State<ConsultPage> {
           if (chunk.isComplete) {
             _loading = false;
             if (_streamingContent.isNotEmpty) {
-              _messages.add(ConsultMessage(role: 'assistant', content: _streamingContent));
-              ConsultSessionStorage.appendMessage(_currentSession!.id, 'assistant', _streamingContent);
+              _messages.add(ConsultMessage(
+                role: 'assistant',
+                content: _streamingContent,
+                reasoning: _streamingReasoning,
+              ));
+              ConsultSessionStorage.appendMessage(
+                _currentSession!.id,
+                'assistant',
+                _streamingContent,
+                reasoning: _streamingReasoning,
+              );
             }
             _streamingContent = '';
             _streamingReasoning = null;
@@ -211,25 +222,18 @@ class _ConsultPageState extends State<ConsultPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_currentSession?.title ?? '不花行不行？'),
+        title: const Text('不花行不行？'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.add_circle),
+            onPressed: _loading || _loadingSessions ? null : _createNewSession,
+            tooltip: '开启新对话',
+            style: IconButton.styleFrom(foregroundColor: AppColors.primaryGreen),
+          ),
           IconButton(
             icon: const Icon(Icons.history),
             onPressed: _loadingSessions ? null : _showSessionList,
-            tooltip: '会话列表',
-          ),
-          IconButton(
-            icon: const Icon(Icons.add_comment),
-            onPressed: _loading || _loadingSessions ? null : _createNewSession,
-            tooltip: '新会话',
-          ),
-          Consumer<PointsProvider>(
-            builder: (_, pp, child) => Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Center(
-                child: Text('积分 ${pp.balance}', style: const TextStyle(fontSize: 14)),
-              ),
-            ),
+            tooltip: '历史对话',
           ),
         ],
       ),
@@ -253,7 +257,11 @@ class _ConsultPageState extends State<ConsultPage> {
                               );
                             }
                             final m = _messages[i];
-                            return _ChatBubble(isUser: m.role == 'user', content: m.content);
+                            return _ChatBubble(
+                              isUser: m.role == 'user',
+                              content: m.content,
+                              reasoning: m.reasoning,
+                            );
                           },
                         ),
                 ),
@@ -377,8 +385,9 @@ class _SessionListSheet extends StatelessWidget {
 class _ChatBubble extends StatelessWidget {
   final bool isUser;
   final String content;
+  final String? reasoning;
 
-  const _ChatBubble({required this.isUser, required this.content});
+  const _ChatBubble({required this.isUser, required this.content, this.reasoning});
 
   @override
   Widget build(BuildContext context) {
@@ -392,10 +401,12 @@ class _ChatBubble extends StatelessWidget {
           color: isUser ? AppColors.primaryGreen : AppColors.primaryLight,
           borderRadius: BorderRadius.circular(16),
         ),
-        child: Text(
-          content,
-          style: TextStyle(fontSize: 15, color: isUser ? Colors.white : null, height: 1.5),
-        ),
+        child: isUser
+            ? Text(
+                content,
+                style: const TextStyle(fontSize: 15, color: Colors.white, height: 1.5),
+              )
+            : _AssistantBubbleContent(content: content, reasoning: reasoning),
       ),
     );
   }
@@ -420,44 +431,197 @@ class _StreamingBubble extends StatelessWidget {
           color: AppColors.primaryLight,
           borderRadius: BorderRadius.circular(16),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (reasoning != null && reasoning!.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    reasoning!,
-                    style: TextStyle(fontSize: 12, color: Colors.grey[700], height: 1.4),
-                  ),
-                ),
-              ),
-            content.isNotEmpty
-                ? Text(content, style: const TextStyle(fontSize: 15, height: 1.5))
-                : loading
-                    ? Row(
-                        children: [
-                          SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                          const SizedBox(width: 8),
-                          Text('思考中...', style: TextStyle(color: Colors.grey[600])),
-                        ],
-                      )
-                    : const SizedBox.shrink(),
-          ],
+        child: _AssistantBubbleContent(
+          content: content,
+          reasoning: reasoning,
+          loading: loading,
         ),
       ),
     );
   }
+}
+
+/// 豆包式：思考内容在气泡内、小灰字、输出时自动滚动、完成时回顶、「思考中/已完成思考」标题
+class _AssistantBubbleContent extends StatefulWidget {
+  final String content;
+  final String? reasoning;
+  final bool loading;
+
+  const _AssistantBubbleContent({
+    required this.content,
+    this.reasoning,
+    this.loading = false,
+  });
+
+  @override
+  State<_AssistantBubbleContent> createState() => _AssistantBubbleContentState();
+}
+
+class _AssistantBubbleContentState extends State<_AssistantBubbleContent> {
+  static const double _thinkingMaxHeight = 96;
+  final _thinkingScrollController = ScrollController();
+  bool _reasoningExpanded = false;
+  bool _lastLoading = false;
+
+  @override
+  void dispose() {
+    _thinkingScrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _lastLoading = widget.loading;
+  }
+
+  @override
+  void didUpdateWidget(covariant _AssistantBubbleContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.reasoning != null && widget.reasoning!.isNotEmpty) {
+      if (widget.loading) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_thinkingScrollController.hasClients) {
+            _thinkingScrollController.jumpTo(
+              _thinkingScrollController.position.maxScrollExtent,
+            );
+          }
+        });
+      } else if (_lastLoading && !widget.loading) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_thinkingScrollController.hasClients) {
+            _thinkingScrollController.jumpTo(0);
+          }
+        });
+      }
+    }
+    _lastLoading = widget.loading;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasReasoning = widget.reasoning != null && widget.reasoning!.trim().isNotEmpty;
+    final isThinkingActive = widget.loading && hasReasoning;
+    final thinkingTitle = hasReasoning
+        ? (widget.loading ? '思考中' : '已完成思考')
+        : null;
+
+    if (isThinkingActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_thinkingScrollController.hasClients) {
+          _thinkingScrollController.jumpTo(
+            _thinkingScrollController.position.maxScrollExtent,
+          );
+        }
+      });
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (hasReasoning) ...[
+          if (thinkingTitle != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                thinkingTitle,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: _reasoningExpanded ? double.infinity : _thinkingMaxHeight,
+            ),
+            child: SingleChildScrollView(
+              controller: _thinkingScrollController,
+              physics: isThinkingActive || _reasoningExpanded
+                  ? const AlwaysScrollableScrollPhysics()
+                  : const NeverScrollableScrollPhysics(),
+              child: Text(
+                widget.reasoning!,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: () => setState(() => _reasoningExpanded = !_reasoningExpanded),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                _reasoningExpanded ? '收起' : '展开全部',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.primaryGreen,
+                ),
+              ),
+            ),
+          ),
+          if (widget.content.isNotEmpty || widget.loading) ...[
+            const SizedBox(height: 10),
+            CustomPaint(
+              size: const Size(double.infinity, 12),
+              painter: _CurvedDividerPainter(),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ],
+        if (widget.content.isNotEmpty)
+          Text(widget.content, style: const TextStyle(fontSize: 15, height: 1.5))
+        else if (widget.loading)
+          Row(
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 8),
+              Text('思考中...', style: TextStyle(color: Colors.grey[600])),
+            ],
+          )
+        else if (!hasReasoning)
+          const SizedBox.shrink(),
+      ],
+    );
+  }
+}
+
+class _CurvedDividerPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.grey[400]!
+      ..strokeWidth = 0.8
+      ..style = PaintingStyle.stroke;
+    final path = Path();
+    final midY = size.height * 0.5;
+    path.moveTo(0, midY);
+    var i = 0.0;
+    while (i < size.width) {
+      final seg = (i / 12).floor();
+      final x2 = (i + 12).clamp(0.0, size.width);
+      path.quadraticBezierTo(
+        i + 6,
+        midY + (seg % 2 == 0 ? 3.0 : -3.0),
+        x2,
+        midY,
+      );
+      i += 12;
+    }
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _EmptyHint extends StatelessWidget {

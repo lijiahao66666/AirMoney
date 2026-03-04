@@ -46,13 +46,19 @@ class ConsultSession {
 class ConsultMessage {
   final String role; // user | assistant
   final String content;
+  final String? reasoning; // 思考过程，仅 assistant
 
-  ConsultMessage({required this.role, required this.content});
+  ConsultMessage({required this.role, required this.content, this.reasoning});
 
-  Map<String, dynamic> toJson() => {'role': role, 'content': content};
+  Map<String, dynamic> toJson() => {
+        'role': role,
+        'content': content,
+        if (reasoning != null && reasoning!.isNotEmpty) 'reasoning': reasoning,
+      };
 
   static ConsultMessage fromJson(Map<String, dynamic> json) => ConsultMessage(
         role: json['role'] as String? ?? 'user',
         content: json['content'] as String? ?? '',
+        reasoning: json['reasoning'] as String?,
       );
 }
