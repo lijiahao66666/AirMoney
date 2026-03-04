@@ -159,7 +159,7 @@ class ApiService {
               'Content': m['content'] ?? '',
             }).toList(),
         'EnableEnhancement': true,
-        'ForceSearchEnhancement': true,
+        'ForceSearchEnhancement': false,
       },
     };
     final request = http.Request('POST', url);
