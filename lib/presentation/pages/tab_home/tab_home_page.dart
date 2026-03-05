@@ -213,6 +213,17 @@ class _TabHomePageState extends State<TabHomePage> {
                   );
                 },
               ),
+              const SizedBox(height: 32),
+              Center(
+                child: Text(
+                  '浙ICP备2026011869号-1',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: (isDark ? Colors.white70 : AppColors.deepText).withOpacity(0.35),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
             ],
           ),
         ),

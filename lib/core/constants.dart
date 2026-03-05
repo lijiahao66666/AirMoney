@@ -21,9 +21,6 @@ class AppConstants {
     '其他',
   ];
 
-  /// 支出分类（兼容旧引用）
-  static List<String> get categories => expenseCategories;
-
   static const List<String> payMethods = [
     '微信',
     '支付宝',
