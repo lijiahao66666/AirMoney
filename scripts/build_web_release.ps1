@@ -1,6 +1,8 @@
 . "$PSScriptRoot\build_config.ps1"
 
 flutter build web --release `
+  --no-web-resources-cdn `
+  --pwa-strategy=none `
   --dart-define=AIRMONEY_API_PROXY_URL="$PROXY_URL" `
   --dart-define=AIRMONEY_API_KEY="$API_KEY"
 
@@ -18,5 +20,5 @@ Write-Host "Web build done." -ForegroundColor Green
 Write-Host "  config : scripts/build_config.ps1 (UseIpMode=$UseIpMode)"
 Write-Host "  output : build/web/"
 Write-Host "  zip    : $zipPath"
-Write-Host "  deploy : Upload build/web/ or zip to money.air-inc.com"
+Write-Host "  deploy : Upload build/web/ or zip to money.air-inc.top"
 Write-Host "  ip     : Web via http://122.51.10.98:8083 (before filing)"

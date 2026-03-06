@@ -60,9 +60,11 @@ class _TabHomePageState extends State<TabHomePage> {
         top: false,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Center(
+          child: SizedBox(
+            width: double.infinity,
             child: Text(
               '浙ICP备2026011869号-1',
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 11,
                 color: (isDark ? Colors.white70 : AppColors.deepText).withOpacity(0.35),
