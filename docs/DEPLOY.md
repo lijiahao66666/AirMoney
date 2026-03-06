@@ -2,13 +2,13 @@
 
 ## 服务器配置（宝塔）
 
-### money.air-inc.com（同站部署，参考 AirTranslate）
+### money.air-inc.top（同站部署，参考 AirTranslate）
 
 **一个站点同时提供 HTML 和 API**：
 
 - **类型**：HTML 站点 + 反向代理
 - **备案前**：绑定 `122.51.10.98:8083`
-- **备案后**：money.air-inc.com:80
+- **备案后**：money.air-inc.top:80
 - **根路径**：Flutter Web 构建的静态文件
 - **/api 路径**：反向代理到 `http://127.0.0.1:9002`（将 `/api/xxx` 转发到后端 `/xxx`）
 
@@ -40,7 +40,7 @@ node app.js   # 或使用 pm2 守护
 ```
 
 - 输出：`build/web/`、`airmoney-web.zip`
-- 部署：将 `build/web/` 内容上传到 money.air-inc.com 站点根目录
+- 部署：将 `build/web/` 内容上传到 money.air-inc.top 站点根目录
 - 备案前访问：http://122.51.10.98:8083
 
 ### Android APK
@@ -73,6 +73,6 @@ chmod +x scripts/build_ios_ipa_release.sh
 
 | 服务       | 备案前 (IP)          | 备案后 (域名)              |
 |------------|----------------------|----------------------------|
-| Web + API  | 122.51.10.98:8083    | money.air-inc.com         |
+| Web + API  | 122.51.10.98:8083    | money.air-inc.top         |
 | API 路径   | :8083/api            | /api                      |
 | 后端进程   | 127.0.0.1:9002       | 127.0.0.1:9002            |
