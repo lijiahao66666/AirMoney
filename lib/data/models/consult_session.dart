@@ -43,22 +43,42 @@ class ConsultSession {
       );
 }
 
+/// 智能体步骤（分析意图、查支出等，可展示）
+class AgentStep {
+  final String label;
+  final String? result;
+
+  const AgentStep(this.label, [this.result]);
+
+  Map<String, dynamic> toJson() => {'label': label, if (result != null) 'result': result};
+  static AgentStep fromJson(Map<String, dynamic> j) => AgentStep(
+        j['label'] as String? ?? '',
+        j['result'] as String?,
+      );
+}
+
 class ConsultMessage {
   final String role; // user | assistant
   final String content;
   final String? reasoning; // 思考过程，仅 assistant
+  final List<AgentStep>? agentSteps; // 智能体步骤，仅 assistant 首条
 
-  ConsultMessage({required this.role, required this.content, this.reasoning});
+  ConsultMessage({required this.role, required this.content, this.reasoning, this.agentSteps});
 
   Map<String, dynamic> toJson() => {
         'role': role,
         'content': content,
         if (reasoning != null && reasoning!.isNotEmpty) 'reasoning': reasoning,
+        if (agentSteps != null && agentSteps!.isNotEmpty)
+          'agentSteps': agentSteps!.map((s) => s.toJson()).toList(),
       };
 
   static ConsultMessage fromJson(Map<String, dynamic> json) => ConsultMessage(
         role: json['role'] as String? ?? 'user',
         content: json['content'] as String? ?? '',
         reasoning: json['reasoning'] as String?,
+        agentSteps: (json['agentSteps'] as List<dynamic>?)
+            ?.map((e) => AgentStep.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList(),
       );
 }

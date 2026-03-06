@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../data/models/bill.dart';
-import '../../../data/models/consult_session.dart';
+import '../../../data/models/consult_session.dart' show ConsultMessage, ConsultSession, AgentStep;
 import '../../../services/api_service.dart';
 import '../../../services/consult_service.dart';
 import '../../../services/consult_session_storage.dart';
@@ -24,6 +24,7 @@ class _ConsultPageState extends State<ConsultPage> {
   List<ConsultMessage> _messages = [];
   String _streamingContent = '';
   String? _streamingReasoning;
+  List<AgentStep> _agentSteps = [];
   bool _loading = false;
   ConsultSession? _currentSession;
   List<ConsultSession> _sessions = [];
@@ -72,6 +73,7 @@ class _ConsultPageState extends State<ConsultPage> {
         _messages = List.from(s.messages);
         _streamingContent = '';
         _streamingReasoning = null;
+        _agentSteps = [];
         _loading = false;
       });
     }
@@ -88,6 +90,7 @@ class _ConsultPageState extends State<ConsultPage> {
         _messages = [];
         _streamingContent = '';
         _streamingReasoning = null;
+        _agentSteps = [];
         _loading = false;
       });
     }
@@ -111,6 +114,7 @@ class _ConsultPageState extends State<ConsultPage> {
       _loading = true;
       _streamingContent = '';
       _streamingReasoning = null;
+      _agentSteps = [];
     });
     await ConsultSessionStorage.appendMessage(_currentSession!.id, 'user', text);
     _scrollToBottom();
@@ -137,6 +141,9 @@ class _ConsultPageState extends State<ConsultPage> {
           pp.setBalance(chunk.pointsBalance!);
         }
         setState(() {
+          if (chunk.agentSteps != null && chunk.agentSteps!.isNotEmpty) {
+            _agentSteps = List.from(chunk.agentSteps!);
+          }
           if (chunk.reasoningContent != null && chunk.reasoningContent!.isNotEmpty) {
             _streamingReasoning = (_streamingReasoning ?? '') + chunk.reasoningContent!;
           }
@@ -150,16 +157,19 @@ class _ConsultPageState extends State<ConsultPage> {
                 role: 'assistant',
                 content: _streamingContent,
                 reasoning: _streamingReasoning,
+                agentSteps: _agentSteps.isNotEmpty ? List.from(_agentSteps) : null,
               ));
               ConsultSessionStorage.appendMessage(
                 _currentSession!.id,
                 'assistant',
                 _streamingContent,
                 reasoning: _streamingReasoning,
+                agentSteps: _agentSteps.isNotEmpty ? _agentSteps : null,
               );
             }
             _streamingContent = '';
             _streamingReasoning = null;
+            _agentSteps = [];
           }
         });
         _scrollToBottom();
@@ -174,6 +184,7 @@ class _ConsultPageState extends State<ConsultPage> {
           _loading = false;
           _streamingContent = '';
           _streamingReasoning = null;
+          _agentSteps = [];
         });
         ConsultSessionStorage.appendMessage(
           _currentSession!.id,
@@ -247,12 +258,13 @@ class _ConsultPageState extends State<ConsultPage> {
                       : ListView.builder(
                           controller: _scrollController,
                           padding: const EdgeInsets.all(16),
-                          itemCount: _messages.length + (_loading || _streamingContent.isNotEmpty ? 1 : 0),
+                          itemCount: _messages.length + (_loading || _streamingContent.isNotEmpty || _agentSteps.isNotEmpty ? 1 : 0),
                           itemBuilder: (_, i) {
                             if (i == _messages.length) {
                               return _StreamingBubble(
                                 content: _streamingContent,
                                 reasoning: _streamingReasoning,
+                                agentSteps: _agentSteps,
                                 loading: _loading && _streamingContent.isEmpty,
                               );
                             }
@@ -261,6 +273,7 @@ class _ConsultPageState extends State<ConsultPage> {
                               isUser: m.role == 'user',
                               content: m.content,
                               reasoning: m.reasoning,
+                              agentSteps: m.agentSteps,
                             );
                           },
                         ),
@@ -386,8 +399,9 @@ class _ChatBubble extends StatelessWidget {
   final bool isUser;
   final String content;
   final String? reasoning;
+  final List<AgentStep>? agentSteps;
 
-  const _ChatBubble({required this.isUser, required this.content, this.reasoning});
+  const _ChatBubble({required this.isUser, required this.content, this.reasoning, this.agentSteps});
 
   @override
   Widget build(BuildContext context) {
@@ -406,7 +420,7 @@ class _ChatBubble extends StatelessWidget {
                 content,
                 style: const TextStyle(fontSize: 15, color: Colors.white, height: 1.5),
               )
-            : _AssistantBubbleContent(content: content, reasoning: reasoning),
+            : _AssistantBubbleContent(content: content, reasoning: reasoning, agentSteps: agentSteps),
       ),
     );
   }
@@ -415,9 +429,10 @@ class _ChatBubble extends StatelessWidget {
 class _StreamingBubble extends StatelessWidget {
   final String content;
   final String? reasoning;
+  final List<AgentStep> agentSteps;
   final bool loading;
 
-  const _StreamingBubble({required this.content, this.reasoning, this.loading = false});
+  const _StreamingBubble({required this.content, this.reasoning, this.agentSteps = const [], this.loading = false});
 
   @override
   Widget build(BuildContext context) {
@@ -434,6 +449,7 @@ class _StreamingBubble extends StatelessWidget {
         child: _AssistantBubbleContent(
           content: content,
           reasoning: reasoning,
+          agentSteps: agentSteps.isNotEmpty ? agentSteps : null,
           loading: loading,
         ),
       ),
@@ -441,15 +457,17 @@ class _StreamingBubble extends StatelessWidget {
   }
 }
 
-/// 豆包式：思考内容在气泡内、小灰字、输出时自动滚动、完成时回顶、「思考中/已完成思考」标题
+/// 豆包式：智能体步骤 + 思考内容 + 回复
 class _AssistantBubbleContent extends StatefulWidget {
   final String content;
   final String? reasoning;
+  final List<AgentStep>? agentSteps;
   final bool loading;
 
   const _AssistantBubbleContent({
     required this.content,
     this.reasoning,
+    this.agentSteps,
     this.loading = false,
   });
 
@@ -520,6 +538,37 @@ class _AssistantBubbleContentState extends State<_AssistantBubbleContent> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (widget.agentSteps != null && widget.agentSteps!.isNotEmpty) ...[
+          ...widget.agentSteps!.map((s) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Icon(
+                      s.result != null ? Icons.check_circle : Icons.hourglass_empty,
+                      size: 14,
+                      color: s.result != null ? AppColors.primaryGreen : Colors.grey[500],
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      s.result != null ? '${s.label} → ${s.result}' : '${s.label}...',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+          if (hasReasoning || widget.content.isNotEmpty || widget.loading) ...[
+            const SizedBox(height: 8),
+            CustomPaint(
+              size: const Size(double.infinity, 8),
+              painter: _CurvedDividerPainter(),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ],
         if (hasReasoning) ...[
           if (thinkingTitle != null)
             Padding(
