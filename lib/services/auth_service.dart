@@ -27,7 +27,8 @@ class AuthService {
     _token = (prefs.getString(_kToken) ?? '').trim();
     _userId = (prefs.getString(_kUserId) ?? '').trim();
     _phone = (prefs.getString(_kPhone) ?? '').trim();
-    _loggedIn = prefs.getBool(_kLoggedIn) ?? false;
+    final persistedLoggedIn = prefs.getBool(_kLoggedIn) ?? false;
+    _loggedIn = _token.isNotEmpty && (persistedLoggedIn || _userId.isNotEmpty);
     debugPrint('[Auth] init: loggedIn=$_loggedIn');
   }
 
@@ -35,11 +36,13 @@ class AuthService {
     final baseUrl = ApiService.proxyUrl.trim();
     if (baseUrl.isEmpty) return AuthResult(success: false, error: '服务未配置');
     try {
-      final resp = await http.post(
-        Uri.parse('$baseUrl/auth/sms/send'),
-        headers: ApiService.headers(),
-        body: jsonEncode({'phone': phone}),
-      ).timeout(const Duration(seconds: 15));
+      final resp = await http
+          .post(
+            Uri.parse('$baseUrl/auth/sms/send'),
+            headers: ApiService.headers(),
+            body: jsonEncode({'phone': phone}),
+          )
+          .timeout(const Duration(seconds: 15));
       final json = jsonDecode(resp.body);
       if (resp.statusCode == 200 && json['success'] == true) {
         return AuthResult(success: true);
@@ -60,11 +63,13 @@ class AuthService {
     try {
       final headers = Map<String, String>.from(ApiService.headers());
       headers['X-Device-Id'] = ApiService.deviceId;
-      final resp = await http.post(
-        Uri.parse('$baseUrl/auth/sms/verify'),
-        headers: headers,
-        body: jsonEncode({'phone': phone, 'code': code}),
-      ).timeout(const Duration(seconds: 15));
+      final resp = await http
+          .post(
+            Uri.parse('$baseUrl/auth/sms/verify'),
+            headers: headers,
+            body: jsonEncode({'phone': phone, 'code': code}),
+          )
+          .timeout(const Duration(seconds: 15));
       final json = jsonDecode(resp.body);
       if (resp.statusCode == 200 && json['token'] != null) {
         _token = json['token'];
@@ -98,11 +103,13 @@ class AuthService {
     final baseUrl = ApiService.proxyUrl.trim();
     if (baseUrl.isNotEmpty) {
       try {
-        await http.post(
-          Uri.parse('$baseUrl/auth/logout'),
-          headers: ApiService.headers(authToken: _token),
-          body: jsonEncode({}),
-        ).timeout(const Duration(seconds: 5));
+        await http
+            .post(
+              Uri.parse('$baseUrl/auth/logout'),
+              headers: ApiService.headers(authToken: _token),
+              body: jsonEncode({}),
+            )
+            .timeout(const Duration(seconds: 5));
       } catch (_) {}
     }
     _token = '';

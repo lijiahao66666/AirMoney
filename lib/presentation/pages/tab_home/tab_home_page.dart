@@ -646,26 +646,42 @@ class _BillFilterPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          TextField(
-            controller: noteController,
-            onChanged: onNoteChanged,
-            decoration: const InputDecoration(
-              labelText: '备注关键词（可选）',
-              hintText: '输入关键词筛选备注',
-              isDense: true,
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.search),
-            ),
-          ),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: onPickDateRange,
-            icon: const Icon(Icons.date_range_rounded, size: 18),
-            label: Text(
-              rangeText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: TextField(
+                  controller: noteController,
+                  onChanged: onNoteChanged,
+                  decoration: const InputDecoration(
+                    labelText: '备注关键词（可选）',
+                    hintText: '输入关键词筛选备注',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: OutlinedButton.icon(
+                  onPressed: onPickDateRange,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 14,
+                    ),
+                  ),
+                  icon: const Icon(Icons.date_range_rounded, size: 18),
+                  label: Text(
+                    rangeText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

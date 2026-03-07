@@ -4,7 +4,7 @@ import 'api_service.dart';
 import 'auth_service.dart';
 
 /// 让 AI 判断用户购买意图属于哪个支出分类
-Future<String?> _classifyPurchaseIntentByAi(String userText) async {
+Future<String?> classifyPurchaseIntentByAi(String userText) async {
   final t = userText.trim();
   if (t.isEmpty) return null;
   try {
@@ -35,43 +35,61 @@ Stream<ConsultStreamChunk> consultStream({
   required List<Map<String, String>> conversationHistory,
   Map<String, double>? recentCategorySpending,
   bool enableAgentSteps = true,
+  String? intentAnalysisTargetText,
+  String? preclassifiedIntentCategory,
 }) async* {
   Map<String, double>? filteredSpending;
-  final userMsgs = conversationHistory.where((x) => (x['role'] ?? '') == 'user');
-  final firstUserContent = userMsgs.isEmpty ? null : (userMsgs.first['content'] ?? '');
-  final needsAgentSteps = enableAgentSteps &&
-      firstUserContent != null &&
-      firstUserContent.trim().isNotEmpty &&
+  final userMsgs = conversationHistory.where(
+    (x) => (x['role'] ?? '') == 'user',
+  );
+  final firstUserContent = userMsgs.isEmpty
+      ? null
+      : (userMsgs.first['content'] ?? '');
+  final analysisTarget = (intentAnalysisTargetText ?? firstUserContent ?? '')
+      .trim();
+  final needsAgentSteps =
+      enableAgentSteps &&
+      analysisTarget.isNotEmpty &&
       recentCategorySpending != null &&
       recentCategorySpending.isNotEmpty;
 
   if (needsAgentSteps) {
     // 步骤1：分析购买意图
     yield ConsultStreamChunk(agentSteps: [const AgentStep('分析购买意图')]);
-    final cat = await _classifyPurchaseIntentByAi(firstUserContent);
+    final cat =
+        preclassifiedIntentCategory ??
+        await classifyPurchaseIntentByAi(analysisTarget);
 
     if (cat != null) {
       final amount = recentCategorySpending[cat];
       if (amount != null && amount > 0) {
         filteredSpending = {cat: amount};
-        final amountStr = amount >= 1000 ? '${(amount / 1000).toStringAsFixed(1)}k' : amount.toStringAsFixed(0);
-        yield ConsultStreamChunk(agentSteps: [
-          AgentStep('分析购买意图', cat),
-          AgentStep('查询近期支出'),
-        ]);
-        yield ConsultStreamChunk(agentSteps: [
-          AgentStep('分析购买意图', cat),
-          AgentStep('查询近期支出', '$cat ¥$amountStr'),
-        ]);
+        final amountStr = amount >= 1000
+            ? '${(amount / 1000).toStringAsFixed(1)}k'
+            : amount.toStringAsFixed(0);
+        yield ConsultStreamChunk(
+          agentSteps: [AgentStep('分析购买意图', cat), AgentStep('查询近期支出')],
+        );
+        yield ConsultStreamChunk(
+          agentSteps: [
+            AgentStep('分析购买意图', cat),
+            AgentStep('查询近期支出', '$cat ¥$amountStr'),
+          ],
+        );
       } else {
-        yield ConsultStreamChunk(agentSteps: [AgentStep('分析购买意图', '$cat（无近期支出）')]);
+        yield ConsultStreamChunk(
+          agentSteps: [AgentStep('分析购买意图', '$cat（无近期支出）')],
+        );
       }
     } else {
-      yield ConsultStreamChunk(agentSteps: [const AgentStep('分析购买意图', '未识别，跳过')]);
+      yield ConsultStreamChunk(
+        agentSteps: [const AgentStep('分析购买意图', '未识别，跳过')],
+      );
     }
   }
 
-  const userInstruction = '''【你的角色】你是「哎呀，钱！」的买前咨询智能体，和用户像朋友一样聊「该不该花这笔钱」，不是在填表或按清单提问。
+  const userInstruction =
+      '''【你的角色】你是「哎呀，钱！」的买前咨询智能体，和用户像朋友一样聊「该不该花这笔钱」，不是在填表或按清单提问。
 
 【核心任务】围绕「值不值得买」讨论。可探索：用途、有无替代、不买会怎样、是否必须马上买、预算等，顺序和取舍灵活应变，根据用户回答决定下一句聊什么。
 
@@ -87,24 +105,40 @@ Stream<ConsultStreamChunk> consultStream({
       '\n\n【输出约束】不要输出任何括号中的“动作/意图标签”，例如（追问细节）、（幽默+理解）、(总结) 等；只输出用户可见的自然回复。';
 
   final messages = <Map<String, String>>[];
+  var lastUserIndex = -1;
+  for (var i = conversationHistory.length - 1; i >= 0; i--) {
+    if ((conversationHistory[i]['role'] ?? '') == 'user') {
+      lastUserIndex = i;
+      break;
+    }
+  }
   for (var i = 0; i < conversationHistory.length; i++) {
     final m = conversationHistory[i];
     final role = m['role'] ?? 'user';
     var content = m['content'] ?? '';
     if (role == 'user') {
-      final isFirstUser = !conversationHistory.take(i).any((x) => (x['role'] ?? '') == 'assistant');
+      final isFirstUser = !conversationHistory
+          .take(i)
+          .any((x) => (x['role'] ?? '') == 'assistant');
       if (isFirstUser) {
-        content = '$userInstruction$noMetaLabelInstruction\n\n---\n【用户说】$content';
-        // 仅在首条用户消息附带近期相关支出（已按购买意图过滤为相关分类）
-        if (filteredSpending != null && filteredSpending.isNotEmpty) {
-          content += '\n\n[近期相关支出] $filteredSpending';
-        }
+        content =
+            '$userInstruction$noMetaLabelInstruction\n\n---\n【用户说】$content';
+      }
+      // 将本轮相关支出注入到最新 user 消息，支持中途换话题后重新分析
+      if (i == lastUserIndex &&
+          filteredSpending != null &&
+          filteredSpending.isNotEmpty) {
+        content += '\n\n[近期相关支出] $filteredSpending';
       }
     }
     messages.add({'role': role, 'content': content});
   }
   if (messages.isEmpty) {
-    messages.add({'role': 'user', 'content': '$userInstruction$noMetaLabelInstruction\n\n---\n【用户说】（等待用户输入）'});
+    messages.add({
+      'role': 'user',
+      'content':
+          '$userInstruction$noMetaLabelInstruction\n\n---\n【用户说】（等待用户输入）',
+    });
   }
 
   final stream = ApiService.chatCompletionsStream(

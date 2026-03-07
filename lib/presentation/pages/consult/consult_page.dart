@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../core/constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../data/models/bill.dart';
-import '../../../data/models/consult_session.dart' show ConsultMessage, ConsultSession, AgentStep;
+import '../../../data/models/consult_session.dart'
+    show ConsultMessage, ConsultSession, AgentStep;
 import '../../../services/api_service.dart';
 import '../../../services/consult_service.dart';
 import '../../../services/consult_session_storage.dart';
@@ -45,6 +47,13 @@ String _stripAssistantMetaTags(String text) {
       .trimRight();
 }
 
+class _IntentAnalysisDecision {
+  final bool shouldAnalyze;
+  final String? category;
+
+  const _IntentAnalysisDecision({required this.shouldAnalyze, this.category});
+}
+
 class ConsultPage extends StatefulWidget {
   const ConsultPage({super.key});
 
@@ -64,6 +73,7 @@ class _ConsultPageState extends State<ConsultPage> {
   ConsultSession? _currentSession;
   List<ConsultSession> _sessions = [];
   bool _loadingSessions = true;
+  String? _lastIntentCategory;
   @override
   void initState() {
     super.initState();
@@ -96,7 +106,10 @@ class _ConsultPageState extends State<ConsultPage> {
       _loadingSessions = false;
     });
     if (_currentSession != null) {
-      setState(() => _messages = List.from(_currentSession!.messages));
+      setState(() {
+        _messages = List.from(_currentSession!.messages);
+        _lastIntentCategory = _extractLastIntentCategory(_messages);
+      });
     }
   }
 
@@ -106,6 +119,7 @@ class _ConsultPageState extends State<ConsultPage> {
       setState(() {
         _currentSession = s;
         _messages = List.from(s.messages);
+        _lastIntentCategory = _extractLastIntentCategory(_messages);
         _streamingRawContent = '';
         _streamingContent = '';
         _streamingReasoning = null;
@@ -124,6 +138,7 @@ class _ConsultPageState extends State<ConsultPage> {
         _currentSession = s;
         _sessions = ConsultSessionStorage.sessions;
         _messages = [];
+        _lastIntentCategory = null;
         _streamingRawContent = '';
         _streamingContent = '';
         _streamingReasoning = null;
@@ -133,10 +148,78 @@ class _ConsultPageState extends State<ConsultPage> {
     }
   }
 
+  String? _normalizeIntentCategory(String? raw) {
+    if (raw == null) return null;
+    var text = raw.trim();
+    if (text.isEmpty) return null;
+    text = text
+        .split('（')
+        .first
+        .split('(')
+        .first
+        .split('→')
+        .last
+        .replaceAll(RegExp(r'[，。,.、\s]'), '');
+    if (AppConstants.expenseCategories.contains(text)) return text;
+    return null;
+  }
+
+  String? _extractLastIntentCategory(List<ConsultMessage> messages) {
+    for (var i = messages.length - 1; i >= 0; i--) {
+      final m = messages[i];
+      final steps = m.agentSteps;
+      if (m.role != 'assistant' || steps == null || steps.isEmpty) continue;
+      for (var j = steps.length - 1; j >= 0; j--) {
+        final step = steps[j];
+        if (!step.label.contains('分析购买意图')) continue;
+        final cat = _normalizeIntentCategory(step.result);
+        if (cat != null) return cat;
+      }
+    }
+    return null;
+  }
+
+  bool _hasTopicSwitchCue(String text) {
+    final t = text.trim().toLowerCase();
+    if (t.isEmpty) return false;
+    const cues = [
+      '换一个',
+      '换个',
+      '换成',
+      '改买',
+      '改成',
+      '不买了',
+      '不考虑了',
+      '先不买',
+      '另外',
+      '另一个',
+      '另个',
+      '现在想买',
+      '改为',
+      '还是买',
+      '转而',
+    ];
+    return cues.any(t.contains);
+  }
+
+  Future<_IntentAnalysisDecision> _decideIntentAnalysis(String userText) async {
+    final hasAssistant = _messages.any((m) => m.role == 'assistant');
+    final cat = await classifyPurchaseIntentByAi(userText);
+    if (!hasAssistant) {
+      return _IntentAnalysisDecision(shouldAnalyze: true, category: cat);
+    }
+    final prevCat = _lastIntentCategory;
+    final cue = _hasTopicSwitchCue(userText);
+    final changedCategory = cat != null && prevCat != null && cat != prevCat;
+    final should = cue || changedCategory;
+    return _IntentAnalysisDecision(shouldAnalyze: should, category: cat);
+  }
+
   Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _loading || _currentSession == null) return;
-    final points = context.read<PointsProvider>().balance;
+    final pp = context.read<PointsProvider>();
+    final points = pp.balance;
     if (points <= 0) {
       WalletSheet.show(
         context,
@@ -154,29 +237,42 @@ class _ConsultPageState extends State<ConsultPage> {
       _streamingReasoning = null;
       _agentSteps = [];
     });
-    await ConsultSessionStorage.appendMessage(_currentSession!.id, 'user', text);
+    await ConsultSessionStorage.appendMessage(
+      _currentSession!.id,
+      'user',
+      text,
+    );
     _scrollToBottom();
 
-    final shouldRunIntentAnalysis = !_messages.any((m) => m.role == 'assistant');
+    final analysisDecision = await _decideIntentAnalysis(text);
+    if (!mounted) return;
+    final shouldRunIntentAnalysis = analysisDecision.shouldAnalyze;
     final bp = context.read<BillProvider>();
     Map<String, double>? recentSpending;
     if (shouldRunIntentAnalysis) {
       try {
         final now = DateTime.now();
         final start = now.subtract(const Duration(days: 30));
-        recentSpending = await bp.getCategoryTotalsInRange(start, now, type: BillType.expense);
+        recentSpending = await bp.getCategoryTotalsInRange(
+          start,
+          now,
+          type: BillType.expense,
+        );
         if (recentSpending.isEmpty) recentSpending = null;
       } catch (_) {}
     }
 
-    final history = _messages.map((m) => {'role': m.role, 'content': m.content}).toList();
-    final pp = context.read<PointsProvider>();
+    final history = _messages
+        .map((m) => {'role': m.role, 'content': m.content})
+        .toList();
 
     try {
       await for (final chunk in consultStream(
         conversationHistory: history,
         recentCategorySpending: recentSpending,
         enableAgentSteps: shouldRunIntentAnalysis,
+        intentAnalysisTargetText: text,
+        preclassifiedIntentCategory: analysisDecision.category,
       )) {
         if (!mounted) return;
         if (chunk.pointsBalance != null) {
@@ -184,10 +280,12 @@ class _ConsultPageState extends State<ConsultPage> {
         }
         setState(() {
           if (chunk.agentSteps != null && chunk.agentSteps!.isNotEmpty) {
-            _agentSteps = List.from(chunk.agentSteps!);
+            _agentSteps = List<AgentStep>.from(chunk.agentSteps!);
           }
-          if (chunk.reasoningContent != null && chunk.reasoningContent!.isNotEmpty) {
-            _streamingReasoning = (_streamingReasoning ?? '') + chunk.reasoningContent!;
+          if (chunk.reasoningContent != null &&
+              chunk.reasoningContent!.isNotEmpty) {
+            _streamingReasoning =
+                (_streamingReasoning ?? '') + chunk.reasoningContent!;
           }
           if (chunk.content.isNotEmpty) {
             _streamingRawContent += chunk.content;
@@ -196,18 +294,24 @@ class _ConsultPageState extends State<ConsultPage> {
           if (chunk.isComplete) {
             _loading = false;
             if (_streamingContent.isNotEmpty) {
-              _messages.add(ConsultMessage(
-                role: 'assistant',
-                content: _streamingContent,
-                reasoning: _streamingReasoning,
-                agentSteps: _agentSteps.isNotEmpty ? List.from(_agentSteps) : null,
-              ));
+              final List<AgentStep>? finalizedSteps = _agentSteps.isNotEmpty
+                  ? List<AgentStep>.from(_agentSteps)
+                  : null;
+              _messages.add(
+                ConsultMessage(
+                  role: 'assistant',
+                  content: _streamingContent,
+                  reasoning: _streamingReasoning,
+                  agentSteps: finalizedSteps,
+                ),
+              );
+              _lastIntentCategory = _extractLastIntentCategory(_messages);
               ConsultSessionStorage.appendMessage(
                 _currentSession!.id,
                 'assistant',
                 _streamingContent,
                 reasoning: _streamingReasoning,
-                agentSteps: _agentSteps.isNotEmpty ? _agentSteps : null,
+                agentSteps: finalizedSteps,
               );
             }
             _streamingRawContent = '';
@@ -221,10 +325,13 @@ class _ConsultPageState extends State<ConsultPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _messages.add(ConsultMessage(
-            role: 'assistant',
-            content: '出错了：${e.toString().replaceAll('Exception:', '').trim()}',
-          ));
+          _messages.add(
+            ConsultMessage(
+              role: 'assistant',
+              content:
+                  '出错了：${e.toString().replaceAll('Exception:', '').trim()}',
+            ),
+          );
           _loading = false;
           _streamingRawContent = '';
           _streamingContent = '';
@@ -284,7 +391,9 @@ class _ConsultPageState extends State<ConsultPage> {
             icon: const Icon(Icons.add_circle),
             onPressed: _loading || _loadingSessions ? null : _createNewSession,
             tooltip: '开启新对话',
-            style: IconButton.styleFrom(foregroundColor: AppColors.primaryGreen),
+            style: IconButton.styleFrom(
+              foregroundColor: AppColors.primaryGreen,
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.history),
@@ -303,7 +412,13 @@ class _ConsultPageState extends State<ConsultPage> {
                       : ListView.builder(
                           controller: _scrollController,
                           padding: const EdgeInsets.all(16),
-                          itemCount: _messages.length + (_loading || _streamingContent.isNotEmpty || _agentSteps.isNotEmpty ? 1 : 0),
+                          itemCount:
+                              _messages.length +
+                              (_loading ||
+                                      _streamingContent.isNotEmpty ||
+                                      _agentSteps.isNotEmpty
+                                  ? 1
+                                  : 0),
                           itemBuilder: (_, i) {
                             if (i == _messages.length) {
                               return _StreamingBubble(
@@ -352,7 +467,9 @@ class _ConsultPageState extends State<ConsultPage> {
                         IconButton.filled(
                           onPressed: _loading ? null : _send,
                           icon: const Icon(Icons.send),
-                          style: IconButton.styleFrom(backgroundColor: AppColors.primaryGreen),
+                          style: IconButton.styleFrom(
+                            backgroundColor: AppColors.primaryGreen,
+                          ),
                         ),
                       ],
                     ),
@@ -401,7 +518,10 @@ class _SessionListSheet extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('会话列表', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                const Text(
+                  '会话列表',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
                 TextButton.icon(
                   onPressed: onNew,
                   icon: const Icon(Icons.add, size: 18),
@@ -449,7 +569,12 @@ class _ChatBubble extends StatelessWidget {
   final String? reasoning;
   final List<AgentStep>? agentSteps;
 
-  const _ChatBubble({required this.isUser, required this.content, this.reasoning, this.agentSteps});
+  const _ChatBubble({
+    required this.isUser,
+    required this.content,
+    this.reasoning,
+    this.agentSteps,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -458,7 +583,9 @@ class _ChatBubble extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.8,
+        ),
         decoration: BoxDecoration(
           color: isUser ? AppColors.primaryGreen : AppColors.primaryLight,
           borderRadius: BorderRadius.circular(16),
@@ -466,9 +593,17 @@ class _ChatBubble extends StatelessWidget {
         child: isUser
             ? Text(
                 content,
-                style: const TextStyle(fontSize: 15, color: Colors.white, height: 1.5),
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: Colors.white,
+                  height: 1.5,
+                ),
               )
-            : _AssistantBubbleContent(content: content, reasoning: reasoning, agentSteps: agentSteps),
+            : _AssistantBubbleContent(
+                content: content,
+                reasoning: reasoning,
+                agentSteps: agentSteps,
+              ),
       ),
     );
   }
@@ -480,7 +615,12 @@ class _StreamingBubble extends StatelessWidget {
   final List<AgentStep> agentSteps;
   final bool loading;
 
-  const _StreamingBubble({required this.content, this.reasoning, this.agentSteps = const [], this.loading = false});
+  const _StreamingBubble({
+    required this.content,
+    this.reasoning,
+    this.agentSteps = const [],
+    this.loading = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -489,7 +629,9 @@ class _StreamingBubble extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.8,
+        ),
         decoration: BoxDecoration(
           color: AppColors.primaryLight,
           borderRadius: BorderRadius.circular(16),
@@ -520,7 +662,8 @@ class _AssistantBubbleContent extends StatefulWidget {
   });
 
   @override
-  State<_AssistantBubbleContent> createState() => _AssistantBubbleContentState();
+  State<_AssistantBubbleContent> createState() =>
+      _AssistantBubbleContentState();
 }
 
 class _AssistantBubbleContentState extends State<_AssistantBubbleContent> {
@@ -566,7 +709,8 @@ class _AssistantBubbleContentState extends State<_AssistantBubbleContent> {
 
   @override
   Widget build(BuildContext context) {
-    final hasReasoning = widget.reasoning != null && widget.reasoning!.trim().isNotEmpty;
+    final hasReasoning =
+        widget.reasoning != null && widget.reasoning!.trim().isNotEmpty;
     final displayContent = _stripAssistantMetaTags(widget.content);
     final isThinkingActive = widget.loading && hasReasoning;
     final thinkingTitle = hasReasoning
@@ -588,27 +732,32 @@ class _AssistantBubbleContentState extends State<_AssistantBubbleContent> {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (widget.agentSteps != null && widget.agentSteps!.isNotEmpty) ...[
-          ...widget.agentSteps!.map((s) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Icon(
-                      s.result != null ? Icons.check_circle : Icons.hourglass_empty,
-                      size: 14,
-                      color: s.result != null ? AppColors.primaryGreen : Colors.grey[500],
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      s.result != null ? '${s.label} → ${s.result}' : '${s.label}...',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                  ],
-                ),
-              )),
+          ...widget.agentSteps!.map(
+            (s) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(
+                    s.result != null
+                        ? Icons.check_circle
+                        : Icons.hourglass_empty,
+                    size: 14,
+                    color: s.result != null
+                        ? AppColors.primaryGreen
+                        : Colors.grey[500],
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    s.result != null
+                        ? '${s.label} → ${s.result}'
+                        : '${s.label}...',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                  ),
+                ],
+              ),
+            ),
+          ),
           if (hasReasoning || displayContent.isNotEmpty || widget.loading) ...[
             const SizedBox(height: 8),
             CustomPaint(
@@ -633,7 +782,9 @@ class _AssistantBubbleContentState extends State<_AssistantBubbleContent> {
             ),
           ConstrainedBox(
             constraints: BoxConstraints(
-              maxHeight: _reasoningExpanded ? double.infinity : _thinkingMaxHeight,
+              maxHeight: _reasoningExpanded
+                  ? double.infinity
+                  : _thinkingMaxHeight,
             ),
             child: SingleChildScrollView(
               controller: _thinkingScrollController,
@@ -651,15 +802,13 @@ class _AssistantBubbleContentState extends State<_AssistantBubbleContent> {
             ),
           ),
           GestureDetector(
-            onTap: () => setState(() => _reasoningExpanded = !_reasoningExpanded),
+            onTap: () =>
+                setState(() => _reasoningExpanded = !_reasoningExpanded),
             child: Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 _reasoningExpanded ? '收起' : '展开全部',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.primaryGreen,
-                ),
+                style: TextStyle(fontSize: 12, color: AppColors.primaryGreen),
               ),
             ),
           ),
@@ -673,7 +822,10 @@ class _AssistantBubbleContentState extends State<_AssistantBubbleContent> {
           ],
         ],
         if (displayContent.isNotEmpty)
-          Text(displayContent, style: const TextStyle(fontSize: 15, height: 1.5))
+          Text(
+            displayContent,
+            style: const TextStyle(fontSize: 15, height: 1.5),
+          )
         else if (widget.loading)
           Row(
             children: [
@@ -731,7 +883,11 @@ class _EmptyHint extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.shopping_bag_outlined, size: 64, color: Colors.grey[400]),
+            Icon(
+              Icons.shopping_bag_outlined,
+              size: 64,
+              color: Colors.grey[400],
+            ),
             const SizedBox(height: 16),
             Text(
               '一定要花这个钱吗？不花行不行？',
