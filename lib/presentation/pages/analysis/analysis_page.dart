@@ -34,12 +34,15 @@ class _AnalysisPageState extends State<AnalysisPage> {
 
   String? _batchAnalysisResult;
   String? _batchAnalysisError;
+  bool _batchAnalysisVisible = false;
+  final Map<String, String> _batchAnalysisCache = <String, String>{};
 
   Object? _singleAnalysisBillKey;
   bool _singleAnalysisVisible = false;
   bool _singleAnalyzing = false;
   String? _singleAnalysisResult;
   String? _singleAnalysisError;
+  final Map<Object, String> _singleAnalysisCache = <Object, String>{};
 
   @override
   void initState() {
@@ -55,6 +58,17 @@ class _AnalysisPageState extends State<AnalysisPage> {
 
   Object _billKey(Bill bill) {
     return bill.id ?? bill.createdAt.microsecondsSinceEpoch;
+  }
+
+  String _buildBatchCacheKey(List<Bill> bills) {
+    final parts = bills.map((bill) {
+      final idPart =
+          bill.id?.toString() ??
+          bill.createdAt.microsecondsSinceEpoch.toString();
+      final datePart = DateFormat('yyyy-MM-dd').format(bill.date);
+      return '$idPart|$datePart|${bill.category}|${bill.amount.toStringAsFixed(2)}';
+    }).toList()..sort();
+    return parts.join('||');
   }
 
   Future<void> _loadBills() async {
@@ -85,11 +99,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
     final base = _filterType == BillType.expense
         ? AppConstants.expenseCategories
         : _filterType == BillType.income
-            ? AppConstants.incomeCategories
-            : [
-                ...AppConstants.expenseCategories,
-                ...AppConstants.incomeCategories,
-              ];
+        ? AppConstants.incomeCategories
+        : [...AppConstants.expenseCategories, ...AppConstants.incomeCategories];
 
     final set = <String>{...base};
     for (final bill in _allBills) {
@@ -164,11 +175,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
 
   void _clearSingleAnalysis() {
     setState(() {
-      _singleAnalysisBillKey = null;
       _singleAnalysisVisible = false;
       _singleAnalyzing = false;
-      _singleAnalysisResult = null;
-      _singleAnalysisError = null;
     });
   }
 
@@ -179,8 +187,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
     setState(() {
       _quickDateRange = 'week';
       _filterDateRange = DateTimeRange(start: start, end: today);
-      _batchAnalysisResult = null;
       _batchAnalysisError = null;
+      _batchAnalysisVisible = false;
     });
   }
 
@@ -191,17 +199,21 @@ class _AnalysisPageState extends State<AnalysisPage> {
     setState(() {
       _quickDateRange = 'month';
       _filterDateRange = DateTimeRange(start: start, end: today);
-      _batchAnalysisResult = null;
       _batchAnalysisError = null;
+      _batchAnalysisVisible = false;
     });
   }
 
   Future<void> _pickFilterDateRange() async {
     final now = DateTime.now();
-    final initial = _filterDateRange ??
+    final initial =
+        _filterDateRange ??
         DateTimeRange(
-          start: DateTime(now.year, now.month, now.day)
-              .subtract(const Duration(days: 30)),
+          start: DateTime(
+            now.year,
+            now.month,
+            now.day,
+          ).subtract(const Duration(days: 30)),
           end: DateTime(now.year, now.month, now.day),
         );
 
@@ -216,8 +228,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
     setState(() {
       _filterDateRange = picked;
       _quickDateRange = 'custom';
-      _batchAnalysisResult = null;
       _batchAnalysisError = null;
+      _batchAnalysisVisible = false;
     });
   }
 
@@ -229,15 +241,15 @@ class _AnalysisPageState extends State<AnalysisPage> {
       _filterPayMethod = null;
       _filterDateRange = null;
       _quickDateRange = 'none';
-      _batchAnalysisResult = null;
       _batchAnalysisError = null;
+      _batchAnalysisVisible = false;
     });
   }
 
   Future<void> _editBill(Bill bill) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => AddBillPage(editingBill: bill)),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => AddBillPage(editingBill: bill)));
     if (!mounted) return;
     await _refreshAllData();
   }
@@ -250,7 +262,9 @@ class _AnalysisPageState extends State<AnalysisPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('删除记录'),
-        content: Text('确定删除这条记录吗？\n${bill.category}  ¥${bill.amount.toStringAsFixed(0)}'),
+        content: Text(
+          '确定删除这条记录吗？\n${bill.category}  ¥${bill.amount.toStringAsFixed(0)}',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -270,9 +284,18 @@ class _AnalysisPageState extends State<AnalysisPage> {
     if (!mounted) return;
 
     if (deleted) {
-      if (_singleAnalysisBillKey == _billKey(bill)) {
+      final billKey = _billKey(bill);
+      _singleAnalysisCache.remove(billKey);
+      _batchAnalysisCache.clear();
+      if (_singleAnalysisBillKey == billKey) {
         _clearSingleAnalysis();
+        _singleAnalysisBillKey = null;
+        _singleAnalysisResult = null;
+        _singleAnalysisError = null;
       }
+      _batchAnalysisVisible = false;
+      _batchAnalysisResult = null;
+      _batchAnalysisError = null;
       await _refreshAllData();
     }
 
@@ -284,6 +307,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
       ),
     );
   }
+
   String _buildFilterLabel() {
     if (_quickDateRange == 'week') return '本周';
     if (_quickDateRange == 'month') return '本月';
@@ -310,6 +334,18 @@ class _AnalysisPageState extends State<AnalysisPage> {
       setState(() {
         _batchAnalysisResult = '当前筛选下没有支出记录，无法反省。';
         _batchAnalysisError = null;
+        _batchAnalysisVisible = true;
+      });
+      return;
+    }
+
+    final cacheKey = _buildBatchCacheKey(expenseBills);
+    final cached = _batchAnalysisCache[cacheKey];
+    if (cached != null && cached.isNotEmpty) {
+      setState(() {
+        _batchAnalysisResult = cached;
+        _batchAnalysisError = null;
+        _batchAnalysisVisible = true;
       });
       return;
     }
@@ -317,6 +353,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
     setState(() {
       _batchAnalyzing = true;
       _batchAnalysisError = null;
+      _batchAnalysisVisible = true;
     });
 
     try {
@@ -341,6 +378,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
       setState(() {
         _batchAnalysisResult = text;
         _batchAnalyzing = false;
+        _batchAnalysisCache[cacheKey] = text;
+        _batchAnalysisVisible = true;
       });
       context.read<PointsProvider>().syncFromServer();
     } catch (e) {
@@ -348,15 +387,16 @@ class _AnalysisPageState extends State<AnalysisPage> {
       setState(() {
         _batchAnalysisError = e.toString().replaceAll('Exception:', '').trim();
         _batchAnalyzing = false;
+        _batchAnalysisVisible = true;
       });
     }
   }
 
   Future<void> _runSingleAnalysis(Bill bill) async {
     if (!bill.isExpense) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('仅支出记录支持单条反省')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('仅支出记录支持单条反省')));
       return;
     }
 
@@ -371,6 +411,29 @@ class _AnalysisPageState extends State<AnalysisPage> {
     }
 
     final billKey = _billKey(bill);
+    if (_singleAnalysisBillKey == billKey &&
+        !_singleAnalysisVisible &&
+        ((_singleAnalysisResult?.isNotEmpty ?? false) ||
+            (_singleAnalysisError?.isNotEmpty ?? false))) {
+      setState(() {
+        _singleAnalysisVisible = true;
+        _singleAnalyzing = false;
+      });
+      return;
+    }
+
+    final cached = _singleAnalysisCache[billKey];
+    if (cached != null && cached.isNotEmpty) {
+      setState(() {
+        _singleAnalysisBillKey = billKey;
+        _singleAnalysisVisible = true;
+        _singleAnalyzing = false;
+        _singleAnalysisResult = cached;
+        _singleAnalysisError = null;
+      });
+      return;
+    }
+
     setState(() {
       _singleAnalysisBillKey = billKey;
       _singleAnalysisVisible = true;
@@ -383,11 +446,9 @@ class _AnalysisPageState extends State<AnalysisPage> {
       final today = DateTime.now();
       final end = DateTime(today.year, today.month, today.day);
       final start = end.subtract(const Duration(days: 29));
-      final categoryTotals = await context.read<BillProvider>().getCategoryTotalsInRange(
-            start,
-            end,
-            type: BillType.expense,
-          );
+      final categoryTotals = await context
+          .read<BillProvider>()
+          .getCategoryTotalsInRange(start, end, type: BillType.expense);
       Map<String, double>? sameCategoryTotals;
       final amount = categoryTotals[bill.category];
       if (amount != null && amount > 0) {
@@ -403,6 +464,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
       setState(() {
         _singleAnalyzing = false;
         _singleAnalysisResult = text;
+        _singleAnalysisCache[billKey] = text;
       });
       context.read<PointsProvider>().syncFromServer();
     } catch (e) {
@@ -456,28 +518,28 @@ class _AnalysisPageState extends State<AnalysisPage> {
                                 !_categoryOptions.contains(_filterCategory)) {
                               _filterCategory = null;
                             }
-                            _batchAnalysisResult = null;
                             _batchAnalysisError = null;
+                            _batchAnalysisVisible = false;
                           });
                         },
                         onCategoryChanged: (value) {
                           setState(() {
                             _filterCategory = value;
-                            _batchAnalysisResult = null;
                             _batchAnalysisError = null;
+                            _batchAnalysisVisible = false;
                           });
                         },
                         onPayMethodChanged: (value) {
                           setState(() {
                             _filterPayMethod = value;
-                            _batchAnalysisResult = null;
                             _batchAnalysisError = null;
+                            _batchAnalysisVisible = false;
                           });
                         },
                         onNoteChanged: (_) {
                           setState(() {
-                            _batchAnalysisResult = null;
                             _batchAnalysisError = null;
+                            _batchAnalysisVisible = false;
                           });
                         },
                         onPickDateRange: _pickFilterDateRange,
@@ -487,8 +549,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
                           setState(() {
                             _filterDateRange = null;
                             _quickDateRange = 'none';
-                            _batchAnalysisResult = null;
                             _batchAnalysisError = null;
+                            _batchAnalysisVisible = false;
                           });
                         },
                         onClearFilters: _clearFilters,
@@ -536,9 +598,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
                                           )
                                         : const Icon(Icons.analytics_rounded),
                                     label: Text(
-                                      _batchAnalyzing
-                                          ? '反省中...'
-                                          : '反省当前筛选全部数据',
+                                      _batchAnalyzing ? '反省中...' : '反省当前筛选全部数据',
                                     ),
                                     style: FilledButton.styleFrom(
                                       backgroundColor: AppColors.primaryGreen,
@@ -579,22 +639,48 @@ class _AnalysisPageState extends State<AnalysisPage> {
                                 ],
                               ),
                             ],
-                            if (_batchAnalysisResult != null &&
+                            if (_batchAnalysisVisible &&
+                                _batchAnalysisResult != null &&
                                 _batchAnalysisResult!.isNotEmpty) ...[
                               const SizedBox(height: 12),
                               Container(
                                 width: double.infinity,
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: AppColors.primaryGreen.withOpacity(0.08),
+                                  color: AppColors.primaryGreen.withOpacity(
+                                    0.08,
+                                  ),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: Text(
-                                  _batchAnalysisResult!,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    height: 1.6,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton.icon(
+                                        onPressed: () {
+                                          setState(() {
+                                            _batchAnalysisVisible = false;
+                                          });
+                                        },
+                                        icon: const Icon(
+                                          Icons.expand_less_rounded,
+                                          size: 16,
+                                        ),
+                                        label: const Text('收起'),
+                                        style: TextButton.styleFrom(
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      _batchAnalysisResult!,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        height: 1.6,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -641,7 +727,8 @@ class _AnalysisPageState extends State<AnalysisPage> {
                           final bill = bills[i];
                           final billKey = _billKey(bill);
                           final showInlinePanel =
-                              _singleAnalysisVisible && _singleAnalysisBillKey == billKey;
+                              _singleAnalysisVisible &&
+                              _singleAnalysisBillKey == billKey;
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 10),
@@ -733,7 +820,9 @@ class _FilterPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: cardBg,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: isDark ? AppColors.cardShadowDark : AppColors.cardShadowLight,
+        boxShadow: isDark
+            ? AppColors.cardShadowDark
+            : AppColors.cardShadowLight,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -766,9 +855,13 @@ class _FilterPanel extends StatelessWidget {
                     isDense: true,
                   ),
                   items: [
-                    const DropdownMenuItem<String?>(value: null, child: Text('全部')),
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('全部'),
+                    ),
                     ...categoryOptions.map(
-                      (c) => DropdownMenuItem<String?>(value: c, child: Text(c)),
+                      (c) =>
+                          DropdownMenuItem<String?>(value: c, child: Text(c)),
                     ),
                   ],
                   onChanged: onCategoryChanged,
@@ -785,9 +878,13 @@ class _FilterPanel extends StatelessWidget {
                     isDense: true,
                   ),
                   items: [
-                    const DropdownMenuItem<String?>(value: null, child: Text('全部')),
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('全部'),
+                    ),
                     ...payMethodOptions.map(
-                      (m) => DropdownMenuItem<String?>(value: m, child: Text(m)),
+                      (m) =>
+                          DropdownMenuItem<String?>(value: m, child: Text(m)),
                     ),
                   ],
                   onChanged: onPayMethodChanged,
@@ -849,6 +946,7 @@ class _FilterPanel extends StatelessWidget {
     );
   }
 }
+
 class _RecordTile extends StatelessWidget {
   final Bill bill;
   final VoidCallback? onReflect;
@@ -899,10 +997,14 @@ class _RecordTile extends StatelessWidget {
     final iconName = AppConstants.categoryIcons[bill.category] ?? 'more_horiz';
     final icon = _iconFromName(iconName);
     final isIncome = bill.isIncome;
-    final amountColor = isIncome ? AppColors.primaryGreen : AppColors.expenseRed;
+    final amountColor = isIncome
+        ? AppColors.primaryGreen
+        : AppColors.expenseRed;
     final prefix = isIncome ? '+' : '-';
     final cardBg = isDark ? const Color(0xFF252B28) : AppColors.primaryLight;
-    final shadow = isDark ? AppColors.cardShadowDark : AppColors.cardShadowLight;
+    final shadow = isDark
+        ? AppColors.cardShadowDark
+        : AppColors.cardShadowLight;
     final id = bill.id ?? bill.createdAt.millisecondsSinceEpoch;
 
     return Slidable(
@@ -1046,25 +1148,19 @@ class _InlineAnalysisPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Text(
-                '单条反省',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-              const Spacer(),
-              if (!loading && hasContent)
-                TextButton.icon(
-                  onPressed: onCollapse,
-                  icon: const Icon(Icons.expand_less_rounded, size: 16),
-                  label: const Text('收起'),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                  ),
+          if (!loading && hasContent)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onCollapse,
+                icon: const Icon(Icons.expand_less_rounded, size: 16),
+                label: const Text('收起'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
                 ),
-            ],
-          ),
-          const SizedBox(height: 6),
+              ),
+            ),
+          if (!loading && hasContent) const SizedBox(height: 4),
           if (loading)
             Row(
               children: const [
@@ -1083,10 +1179,7 @@ class _InlineAnalysisPanel extends StatelessWidget {
               style: const TextStyle(color: AppColors.expenseRed, height: 1.5),
             )
           else if (result != null && result!.isNotEmpty)
-            Text(
-              result!,
-              style: const TextStyle(fontSize: 14, height: 1.6),
-            )
+            Text(result!, style: const TextStyle(fontSize: 14, height: 1.6))
           else
             const SizedBox.shrink(),
         ],
@@ -1115,14 +1208,21 @@ class _EmptyRecords extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.filter_alt_off_rounded, size: 48, color: Colors.grey[400]),
+              Icon(
+                Icons.filter_alt_off_rounded,
+                size: 48,
+                color: Colors.grey[400],
+              ),
               const SizedBox(height: 10),
               Text(
                 '当前筛选下没有记录',
                 style: TextStyle(fontSize: 15, color: Colors.grey[700]),
               ),
               const SizedBox(height: 8),
-              OutlinedButton(onPressed: onClearFilters, child: const Text('清空筛选')),
+              OutlinedButton(
+                onPressed: onClearFilters,
+                child: const Text('清空筛选'),
+              ),
             ],
           ),
         ),
@@ -1146,7 +1246,9 @@ class _EmptyRecords extends StatelessWidget {
               onPressed: onAdd,
               icon: const Icon(Icons.add),
               label: const Text('记一笔'),
-              style: FilledButton.styleFrom(backgroundColor: AppColors.primaryGreen),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primaryGreen,
+              ),
             ),
           ],
         ),

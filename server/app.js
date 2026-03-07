@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const http = require('http');
 const https = require('https');
@@ -25,33 +25,33 @@ const path = require('path');
   }
 })();
 
-// --- Helper: API Key Check ---
+// --- 工具函数：API Key 校验 ---
 function verifyApiKey(req) {
   const serverKey = (process.env.API_KEY || '').trim();
-  if (!serverKey) return true; // No API_KEY configured = allow all (dev mode)
+  if (!serverKey) return true; // 未配置 API_KEY 时默认放行（开发模式）
   const clientKey = String(req.headers['x-api-key'] || '').trim();
   return clientKey === serverKey;
 }
 
 /*
- * AirMoney API Server (Lightweight Cloud)
+ * AirMoney 统一后端服务（轻量云端版）
  *
- * Capabilities:
- * 1. Proxy Tencent Cloud Hunyuan API (ChatCompletions) with server-side signing.
- * 2. Points-based billing (local JSON files).
- * 3. Remote config endpoint (/config).
+ * 主要功能：
+ * 1. 代理腾讯云混元 API（含流式响应），并在服务端完成签名。
+ * 2. 本地 JSON 积分计费。
+ * 3. 提供 App 远程配置接口（/config）。
  *
- * Environment Variables Required:
- * - TENCENT_SECRET_ID / TENCENT_SECRET_KEY: For signing Tencent Cloud API requests.
- * - API_KEY: (Optional) Static API key for request authentication.
- * - PORT: (Optional) Default 9002.
+ * 关键环境变量：
+ * - TENCENT_SECRET_ID / TENCENT_SECRET_KEY：腾讯云签名凭据。
+ * - API_KEY：可选，静态接口鉴权。
+ * - PORT：可选，默认 9002。
  *
- * Data stored locally:
- * - ./config.json: Remote config for App.
- * - ./data/points/{deviceId}.json: Points balance per device.
+ * 本地数据目录：
+ * - ./config.json：App 远程配置。
+ * - ./data/points/{identity}.json：用户或设备积分数据。
  */
 
-// --- Helper: Crypto ---
+// --- 工具函数：加密相关 ---
 function sha256Hex(msg) {
   return crypto.createHash('sha256').update(msg, 'utf8').digest('hex');
 }
@@ -78,7 +78,7 @@ function charCount(s) {
   }
 }
 
-// --- Helper: Tencent Cloud v3 Signature ---
+// --- 工具函数：腾讯云 TC3 签名 ---
 function buildTc3Auth({
   secretId,
   secretKey,
@@ -140,13 +140,13 @@ function buildTc3Auth({
   return headers;
 }
 
-// --- Local Points Storage ---
+// --- 本地积分存储 ---
 const DATA_DIR = path.join(__dirname, 'data', 'points');
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// --- User Auth Storage ---
+// --- 用户认证存储目录 ---
 const USERS_DIR = path.join(__dirname, 'data', 'users');
 const SMS_DIR = path.join(__dirname, 'data', 'sms');
 const TOKENS_DIR = path.join(__dirname, 'data', 'tokens');
@@ -155,7 +155,7 @@ const STATS_DIR = path.join(__dirname, 'data', 'stats', 'daily');
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 });
 
-// --- SMS: Tencent Cloud SMS API ---
+// --- 短信能力：腾讯云 SMS API ---
 function _smsFile(phone) {
   const safe = String(phone).replace(/[^0-9]/g, '');
   return path.join(SMS_DIR, `${safe}.json`);
@@ -169,7 +169,7 @@ async function sendSmsCode(phone) {
   const safe = String(phone).replace(/[^0-9]/g, '');
   if (safe.length !== 11) return { error: 'InvalidPhone' };
 
-  // Rate limit: 60s per phone, 10 per day
+  // 发送频率限制：同手机号 60 秒 1 次，每日最多 10 次
   const file = _smsFile(safe);
   let smsData = null;
   try {
@@ -189,9 +189,9 @@ async function sendSmsCode(phone) {
   }
 
   const code = _generateCode();
-  const expireAt = now + 5 * 60 * 1000; // 5 minutes
+  const expireAt = now + 5 * 60 * 1000; // 验证码 5 分钟过期
 
-  // Send via Tencent Cloud SMS API
+  // 通过腾讯云 SMS API 发送验证码
   const smsAppId = (process.env.SMS_APP_ID || '').trim();
   const smsSign = (process.env.SMS_SIGN || '').trim();
   const smsTemplateId = (process.env.SMS_TEMPLATE_ID || '').trim();
@@ -256,7 +256,7 @@ async function sendSmsCode(phone) {
     return { error: 'SmsSendFailed', message: '短信发送失败' };
   }
 
-  // Save code
+  // 持久化验证码记录
   const dailyCount = (smsData && smsData.dailyDate === today) ? (smsData.dailyCount || 0) + 1 : 1;
   fs.writeFileSync(file, JSON.stringify({
     code, expireAt, lastSentAt: now,
@@ -275,6 +275,7 @@ function verifySmsCode(phone, code) {
     const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
     if (Date.now() > data.expireAt) return false;
     if (data.code !== String(code).trim()) return false;
+    // 验证码一次性使用，校验成功后立即删除
     fs.unlinkSync(file);
     return true;
   } catch (_) {
@@ -282,7 +283,7 @@ function verifySmsCode(phone, code) {
   }
 }
 
-// --- User Management ---
+// --- 用户管理 ---
 function _userFile(phone) {
   const safe = String(phone).replace(/[^0-9]/g, '');
   return path.join(USERS_DIR, `${safe}.json`);
@@ -356,6 +357,7 @@ function revokeToken(token) {
   try { if (fs.existsSync(tf)) fs.unlinkSync(tf); } catch (_) {}
 }
 
+// --- 工具函数：从请求中提取 userId（token 认证） ---
 function getUserIdFromReq(req) {
   const token = String(req.headers['x-auth-token'] || '').trim();
   if (!token) return null;
@@ -363,7 +365,7 @@ function getUserIdFromReq(req) {
   return user ? user.userId : null;
 }
 
-// --- DAU Statistics ---
+// --- DAU（日活）统计 ---
 function _statsFile(date) {
   return path.join(STATS_DIR, `${date}.json`);
 }
@@ -392,6 +394,7 @@ function recordActivity({ userId, platform, action }) {
 }
 
 function _pointsFile(deviceId) {
+  // 清洗 deviceId，避免路径穿越
   const safe = String(deviceId || 'unknown').replace(/[^a-zA-Z0-9_\-]/g, '_');
   return path.join(DATA_DIR, `${safe}.json`);
 }
@@ -427,6 +430,8 @@ async function setPointsBalance({ deviceId, balance }) {
   return next;
 }
 
+// 确保身份有积分记录；首次赠送仅对已登录 userId 生效
+// 返回 { balance, initialGrantedThisTime }，供客户端决定是否展示首登赠送提示
 async function ensureInitialGrant({ deviceId, config, isUserId }) {
   let obj = _readPointsData(deviceId);
   const grantAmount = Number(config.initial_grant_points) || 500000;
@@ -453,6 +458,7 @@ async function ensureInitialGrant({ deviceId, config, isUserId }) {
   return { balance: Number(obj.balance || 0), initialGrantedThisTime: false };
 }
 
+// 服务端执行签到：返回 { points, alreadyDone, balance }，失败返回 null
 async function doCheckin({ deviceId, config }) {
   if (!deviceId) return null;
   const today = new Date().toISOString().substring(0, 10);
@@ -471,7 +477,7 @@ async function doCheckin({ deviceId, config }) {
   return { points: reward, alreadyDone: false, balance: obj.balance };
 }
 
-// --- Helper: HTTP Utils ---
+// --- 工具函数：HTTP 读写 ---
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -498,12 +504,12 @@ function sendJson(res, statusCode, obj) {
   const body = JSON.stringify(obj);
   res.statusCode = statusCode;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', '*'); // 所有响应统一放开 CORS
   res.setHeader('Content-Length', Buffer.byteLength(body));
   res.end(body);
 }
 
-// --- Logic: API Proxy ---
+// --- 核心逻辑：API 代理 ---
 function isAllowedHost(host) {
   const allow = new Set([
     'hunyuan.tencentcloudapi.com',
@@ -594,10 +600,12 @@ async function handleApiProxy(req, res, body) {
   const requestSecretKey = String(requestSecretKeyRaw || '').trim();
   const usingPersonalKeys = Boolean(requestSecretId && requestSecretKey);
 
+  // --- 安全校验：静态 API Key ---
   if (!usingPersonalKeys && !verifyApiKey(req)) {
     return sendJson(res, 401, { error: 'Unauthorized', message: 'Invalid or missing API key' });
   }
 
+  // 积分记账优先使用已登录 userId，其次才使用 deviceId
   const userId = getUserIdFromReq(req);
   const deviceId = userId || String(req.headers['x-device-id'] || '').trim();
   const canAccountPoints = !usingPersonalKeys && Boolean(deviceId);
@@ -897,7 +905,7 @@ async function handleApiProxy(req, res, body) {
   upstreamReq.end();
 }
 
-// --- Remote Config ---
+// --- 远程配置 ---
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 const DEFAULT_CONFIG = {
   checkin_enabled: true,
@@ -931,8 +939,9 @@ if (!fs.existsSync(CONFIG_FILE)) {
   console.log('[config] Created default ' + CONFIG_FILE);
 }
 
-// --- Main Server ---
+// --- 主服务入口 ---
 const server = http.createServer(async (req, res) => {
+  // CORS 预检与跨域头
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'content-type,x-api-key,x-device-id,x-auth-token,x-platform,accept');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -943,6 +952,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // GET /config：下发 App 远程配置（支持 query，如 ?v=1）
   const pathOnly = (req.url || '').split('?')[0];
 
   if (req.method === 'GET' && pathOnly === '/config') {
@@ -955,6 +965,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // GET / 或 /health：健康检查
   if (req.method === 'GET' && (pathOnly === '/' || pathOnly === '/health')) {
     res.writeHead(200, {
       'Content-Type': 'text/plain',
@@ -964,6 +975,9 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // === 认证接口 ===
+
+  // POST /auth/sms/send：发送短信验证码
   if (req.method === 'POST' && req.url === '/auth/sms/send') {
     if (!verifyApiKey(req)) return sendJson(res, 401, { error: 'Unauthorized' });
     let body;
@@ -977,6 +991,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { success: true });
   }
 
+  // POST /auth/sms/verify：校验验证码并登录/注册
   if (req.method === 'POST' && req.url === '/auth/sms/verify') {
     if (!verifyApiKey(req)) return sendJson(res, 401, { error: 'Unauthorized' });
     let body;
@@ -993,8 +1008,10 @@ const server = http.createServer(async (req, res) => {
     const user = findOrCreateUser(phone);
     const config = loadConfig();
 
+    // 确保用户账号执行首登赠送（幂等：只会赠送一次）
     const grantResult = await ensureInitialGrant({ deviceId: user.userId, config, isUserId: true });
 
+    // 将设备匿名积分合并到 userId（累加），随后清零设备积分
     const deviceId = String(req.headers['x-device-id'] || '').trim();
     if (deviceId && deviceId !== user.userId) {
       const devicePoints = _readPointsData(deviceId);
@@ -1004,12 +1021,14 @@ const server = http.createServer(async (req, res) => {
         userPoints.balance = merged;
         userPoints.initialGranted = true;
         _writePointsData(user.userId, userPoints);
+        // 合并后将设备积分清零
         devicePoints.balance = 0;
         _writePointsData(deviceId, devicePoints);
         console.log(`[Auth] Merged device ${deviceId} points (+${devicePoints.balance}) into user ${user.userId}, new balance=${merged}`);
       }
     }
 
+    // 记录该账号关联过的设备
     if (deviceId && !user.devices.includes(deviceId)) {
       user.devices.push(deviceId);
       fs.writeFileSync(_userFile(phone.replace(/[^0-9]/g, '')), JSON.stringify(user, null, 2), 'utf-8');
@@ -1030,6 +1049,7 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  // POST /auth/profile：获取当前用户信息（需 token）
   if (req.method === 'POST' && req.url === '/auth/profile') {
     if (!verifyApiKey(req)) return sendJson(res, 401, { error: 'Unauthorized' });
     const user = getUserByToken(String(req.headers['x-auth-token'] || '').trim());
@@ -1044,10 +1064,12 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  // POST /auth/logout：退出登录（撤销 token，并清零当前设备积分）
   if (req.method === 'POST' && req.url === '/auth/logout') {
     const token = String(req.headers['x-auth-token'] || '').trim();
     const deviceId = String(req.headers['x-device-id'] || '').trim();
     if (token) revokeToken(token);
+    // 退出时清零设备积分（账号积分保留）
     if (deviceId) {
       const deviceObj = _readPointsData(deviceId);
       if (deviceObj) {
@@ -1059,6 +1081,9 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { success: true });
   }
 
+  // === 积分与签到接口（优先 token 对应 userId，回退 deviceId） ===
+
+  // POST /points/init：初始化积分并返回余额（首登赠送仅登录 userId 可得）
   if (req.method === 'POST' && req.url === '/points/init') {
     if (!verifyApiKey(req)) return sendJson(res, 401, { error: 'Unauthorized' });
     const userId = getUserIdFromReq(req);
@@ -1069,6 +1094,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { balance });
   }
 
+  // POST /points/balance：查询当前积分余额
   if (req.method === 'POST' && req.url === '/points/balance') {
     if (!verifyApiKey(req)) return sendJson(res, 401, { error: 'Unauthorized' });
     const userId = getUserIdFromReq(req);
@@ -1078,6 +1104,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { balance });
   }
 
+  // POST /checkin/status：查询今日是否已签到
   if (req.method === 'POST' && req.url === '/checkin/status') {
     if (!verifyApiKey(req)) return sendJson(res, 401, { error: 'Unauthorized' });
     const userId = getUserIdFromReq(req);
@@ -1089,6 +1116,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { checkedInToday: !!done });
   }
 
+  // POST /checkin：执行服务端每日签到
   if (req.method === 'POST' && req.url === '/checkin') {
     if (!verifyApiKey(req)) return sendJson(res, 401, { error: 'Unauthorized' });
     const userId = getUserIdFromReq(req);
@@ -1100,6 +1128,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, result);
   }
 
+  // POST /：统一 API 代理入口
   if (req.method === 'POST') {
     let body;
     try {
@@ -1108,6 +1137,7 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 400, { error: 'InvalidJson', message: String(e && e.message ? e.message : e) });
       return;
     }
+    // 已登录用户调用代理接口时记录 DAU 行为
     const userId = getUserIdFromReq(req);
     if (userId) {
       const platform = String(req.headers['x-platform'] || '').trim();
