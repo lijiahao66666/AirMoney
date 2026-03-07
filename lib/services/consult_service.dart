@@ -8,7 +8,7 @@ String _normalizeCategoryText(String text) {
       .trim()
       .replaceAll(RegExp(r'\s+'), '')
       .replaceAll(
-        RegExp(r'[，。！？、,.!?:：;；【】\[\]\(\)（）《》“”·\-_\/]'),
+        RegExp(r'[^0-9A-Za-z\u4e00-\u9fff]'),
         '',
       );
 }
@@ -39,6 +39,7 @@ MapEntry<String, double>? _findRecentCategoryAmount(
   }
   final normalizedTarget = _normalizeCategoryText(category);
   if (normalizedTarget.isEmpty) return null;
+
   String? matchedKey;
   var sum = 0.0;
   for (final entry in totals.entries) {
@@ -52,41 +53,40 @@ MapEntry<String, double>? _findRecentCategoryAmount(
     matchedKey ??= entry.key;
     sum += entry.value;
   }
+
   if (sum <= 0) return null;
   return MapEntry(matchedKey ?? category, sum);
 }
 
-/// 让 AI 判断用户购买意图属于哪个支出分类
 Future<String?> classifyPurchaseIntentByAi(String userText) async {
-  final t = userText.trim();
-  if (t.isEmpty) return null;
+  final text = userText.trim();
+  if (text.isEmpty) return null;
+
   try {
-    final resp = await ApiService.chatCompletions(
-      messages: [
-        {
+    final response = await ApiService.chatCompletions(
+      messages: <Map<String, String>>[
+        <String, String>{
           'role': 'user',
-          'content': '''用户说想买/想花：$t
+          'content': '''用户说想买/想花：$text
 
-请判断这属于以下哪个支出分类：餐饮、交通、购物、娱乐、居家、医疗、教育、其他。
-
-只回复分类名，不要标点、解释或其他内容。''',
+请从以下分类中只返回一个分类名：餐饮、交通、购物、娱乐、居家、医疗、教育、其他。
+只回复分类名，不要解释。''',
         },
       ],
       authToken: AuthService.token.isNotEmpty ? AuthService.token : null,
     );
-    final cleaned = resp.trim().replaceAll(RegExp(r'[。，“”‘’`~\s]+'), '');
-    final cat = _pickCategoryFromText(cleaned, AppConstants.expenseCategories);
-    if (cat != null) return cat;
-    final fallback = _pickCategoryFromText(resp, AppConstants.expenseCategories);
-    if (fallback != null) return fallback;
-    return null;
+
+    final cleaned =
+        response.trim().replaceAll(RegExp(r'[。，“”‘’`~\s]+'), '');
+    final picked = _pickCategoryFromText(cleaned, AppConstants.expenseCategories);
+    if (picked != null) return picked;
+
+    return _pickCategoryFromText(response, AppConstants.expenseCategories);
   } catch (_) {
     return null;
   }
 }
 
-/// 咨询：流式多轮对话，思考模型 + 搜索增强
-/// 首条消息时：先展示「分析意图→查支出」步骤，再咨询
 Stream<ConsultStreamChunk> consultStream({
   required List<Map<String, String>> conversationHistory,
   Map<String, double>? recentCategorySpending,
@@ -95,72 +95,61 @@ Stream<ConsultStreamChunk> consultStream({
   String? preclassifiedIntentCategory,
 }) async* {
   Map<String, double>? filteredSpending;
-  final userMsgs = conversationHistory.where(
-    (x) => (x['role'] ?? '') == 'user',
-  );
-  final firstUserContent = userMsgs.isEmpty
-      ? null
-      : (userMsgs.first['content'] ?? '');
-  final analysisTarget = (intentAnalysisTargetText ?? firstUserContent ?? '')
-      .trim();
-  final needsAgentSteps =
-      enableAgentSteps &&
-      analysisTarget.isNotEmpty &&
-      recentCategorySpending != null &&
-      recentCategorySpending.isNotEmpty;
+  const stepIntent = '分析购买意图';
+  const stepRecent = '同类近30天支出';
+
+  final userMessages = conversationHistory.where((x) => (x['role'] ?? '') == 'user');
+  final firstUserContent =
+      userMessages.isEmpty ? null : (userMessages.first['content'] ?? '');
+  final analysisTarget = (intentAnalysisTargetText ?? firstUserContent ?? '').trim();
+  final needsAgentSteps = enableAgentSteps && analysisTarget.isNotEmpty;
 
   if (needsAgentSteps) {
-    // 步骤1：分析购买意图
-    yield ConsultStreamChunk(agentSteps: [const AgentStep('分析购买意图')]);
-    final cat =
-        preclassifiedIntentCategory ??
-        await classifyPurchaseIntentByAi(analysisTarget);
+    yield ConsultStreamChunk(agentSteps: <AgentStep>[const AgentStep(stepIntent)]);
 
-    if (cat != null) {
-      final matched = _findRecentCategoryAmount(recentCategorySpending, cat);
-      final matchedCategory = matched?.key ?? cat;
-      final amount = matched?.value;
-      if (amount != null && amount > 0) {
-        filteredSpending = {matchedCategory: amount};
-        final amountStr = amount >= 1000
-            ? '${(amount / 1000).toStringAsFixed(1)}k'
-            : amount.toStringAsFixed(0);
+    final category =
+        preclassifiedIntentCategory ?? await classifyPurchaseIntentByAi(analysisTarget);
+
+    if (category != null) {
+      MapEntry<String, double>? matched;
+      if (recentCategorySpending != null && recentCategorySpending.isNotEmpty) {
+        matched = _findRecentCategoryAmount(recentCategorySpending, category);
+      }
+
+      if (matched != null && matched.value > 0) {
+        filteredSpending = <String, double>{matched.key: matched.value};
+        final amountText = matched.value >= 1000
+            ? '${(matched.value / 1000).toStringAsFixed(1)}k'
+            : matched.value.toStringAsFixed(0);
+
         yield ConsultStreamChunk(
-          agentSteps: [AgentStep('分析购买意图', cat), AgentStep('同类近30天支出')],
-        );
-        yield ConsultStreamChunk(
-          agentSteps: [
-            AgentStep('分析购买意图', cat),
-            AgentStep('同类近30天支出', '$matchedCategory ¥$amountStr'),
+          agentSteps: <AgentStep>[
+            AgentStep(stepIntent, category),
+            AgentStep(stepRecent, '${matched.key} ¥$amountText'),
           ],
         );
       } else {
         yield ConsultStreamChunk(
-          agentSteps: [AgentStep('分析购买意图', '$cat（近30天无支出）')],
+          agentSteps: <AgentStep>[
+            AgentStep(stepIntent, category),
+            const AgentStep(stepRecent, '无支出'),
+          ],
         );
       }
     } else {
       yield ConsultStreamChunk(
-        agentSteps: [const AgentStep('分析购买意图', '未识别，跳过')],
+        agentSteps: <AgentStep>[const AgentStep(stepIntent, '未识别，跳过')],
       );
     }
   }
 
-  const userInstruction =
-      '''【你的角色】你是「哎呀，钱！」的买前咨询智能体，和用户像朋友一样聊「该不该花这笔钱」，不是在填表或按清单提问。
-
-【核心任务】围绕「值不值得买」讨论。可探索：用途、有无替代、不买会怎样、是否必须马上买、预算等，顺序和取舍灵活应变，根据用户回答决定下一句聊什么。
-
-【反应优先】每次回复先对用户上一句话做反应（理解、认同、追问细节），再自然过渡到新话题。不要用户一答完立刻跳下一题，要像真人聊天一样有来有回。
-
-【近期支出】若下方有「近期相关支出」数据，可自然融入对话（如「你最近在这块花了不少」），仅当确实有助于讨论时提及，不必每次刻意提起。没有数据或数据无关时完全忽略。
-
-【禁止】不要机械地一问一答。不要只介绍产品功能、参数、价格。不要一次抛出多个问题。
-
-【风格】自然、有来有回，可以有小幽默和简短评价。敢于说「可以不买」「再等等」。不推销、不讨好。''';
-
-  const noMetaLabelInstruction =
-      '\n\n【输出约束】不要输出任何括号中的“动作/意图标签”，例如（追问细节）、（幽默+理解）、(总结) 等；只输出用户可见的自然回复。';
+  const userInstruction = '''【角色】你是“该不该花”咨询智能体，像朋友一样聊天，可以有一点幽默。
+【最终目标】尽量帮助用户不买，或者延迟购买；如果确实要买，也尽量降级和控预算。
+【对话方式】自由发挥，不要按固定问答模板盘问；先回应用户当下的情绪和诉求，再自然推进到建议。
+【建议方向】优先考虑：不买 > 延迟买（给等待天数和触发条件） > 替代/二手/降级 > 必买时给预算上限。
+【避免偏题】除非用户明确要参数建议，不主动展开配置评测、版本比较，也不要反问“买哪个版本”。
+【输出风格】像朋友聊天，不说教；可以简短、有梗，但不要油腻。
+【输出约束】不要输出括号里的动作标签，例如（追问细节）（总结）等。''';
 
   final messages = <Map<String, String>>[];
   var lastUserIndex = -1;
@@ -170,32 +159,33 @@ Stream<ConsultStreamChunk> consultStream({
       break;
     }
   }
+
   for (var i = 0; i < conversationHistory.length; i++) {
-    final m = conversationHistory[i];
-    final role = m['role'] ?? 'user';
-    var content = m['content'] ?? '';
+    final message = conversationHistory[i];
+    final role = message['role'] ?? 'user';
+    var content = message['content'] ?? '';
+
     if (role == 'user') {
-      final isFirstUser = !conversationHistory
-          .take(i)
-          .any((x) => (x['role'] ?? '') == 'assistant');
+      final isFirstUser =
+          !conversationHistory.take(i).any((x) => (x['role'] ?? '') == 'assistant');
       if (isFirstUser) {
-        content =
-            '$userInstruction$noMetaLabelInstruction\n\n---\n【用户说】$content';
+        content = '$userInstruction\n\n---\n【用户说】$content';
       }
-      // 将本轮相关支出注入到最新 user 消息，支持中途换话题后重新分析
+
       if (i == lastUserIndex &&
           filteredSpending != null &&
           filteredSpending.isNotEmpty) {
         content += '\n\n[近期相关支出] $filteredSpending';
       }
     }
-    messages.add({'role': role, 'content': content});
+
+    messages.add(<String, String>{'role': role, 'content': content});
   }
+
   if (messages.isEmpty) {
-    messages.add({
+    messages.add(<String, String>{
       'role': 'user',
-      'content':
-          '$userInstruction$noMetaLabelInstruction\n\n---\n【用户说】（等待用户输入）',
+      'content': '$userInstruction\n\n---\n【用户说】（等待用户输入）',
     });
   }
 

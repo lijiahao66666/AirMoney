@@ -1,8 +1,5 @@
 /// 账单类型：支出 / 收入
-enum BillType {
-  expense,
-  income,
-}
+enum BillType { expense, income }
 
 extension BillTypeExt on BillType {
   String get value => this == BillType.expense ? 'expense' : 'income';
@@ -17,6 +14,7 @@ class Bill {
   final String payMethod;
   final DateTime date;
   final DateTime createdAt;
+
   /// 支出(expense) 或 收入(income)
   final BillType type;
 
@@ -47,9 +45,16 @@ class Bill {
     };
   }
 
+  static BillType _parseType(dynamic raw) {
+    final t = (raw?.toString() ?? '').trim().toLowerCase();
+    if (t == 'income' || t == '\u6536\u5165' || t == 'in' || t == 'credit') {
+      return BillType.income;
+    }
+    return BillType.expense;
+  }
+
   factory Bill.fromMap(Map<String, dynamic> map) {
-    final typeStr = map['type'] as String? ?? 'expense';
-    final t = typeStr == 'income' ? BillType.income : BillType.expense;
+    final t = _parseType(map['type']);
     return Bill(
       id: map['id'] as int?,
       amount: (map['amount'] as num).toDouble(),
