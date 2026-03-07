@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 import 'app_colors.dart';
 
 class AppTheme {
@@ -17,6 +19,11 @@ class AppTheme {
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
+        ),
         titleTextStyle: TextStyle(
           color: AppColors.deepText,
           fontSize: 18,
@@ -33,7 +40,7 @@ class AppTheme {
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppColors.primaryGreen,
         primary: AppColors.primaryGreen,
-        surface: const Color(0xFF252B28),
+        surface: Color(0xFF252B28),
         onSurface: Colors.white,
         brightness: Brightness.dark,
       ),
@@ -42,6 +49,11 @@ class AppTheme {
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+        ),
         titleTextStyle: TextStyle(
           color: Colors.white,
           fontSize: 18,

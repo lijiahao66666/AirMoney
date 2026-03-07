@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -35,11 +35,14 @@ class _TabHomePageState extends State<TabHomePage> {
   String? _filterPayMethod;
   DateTimeRange? _filterDateRange;
   final TextEditingController _noteFilterController = TextEditingController();
+  bool _reminderEnabled = false;
+  String? _nextReminderTime;
 
   @override
   void initState() {
     super.initState();
     _loadTotals();
+    _loadReminderPreview();
   }
 
   @override
@@ -61,6 +64,56 @@ class _TabHomePageState extends State<TabHomePage> {
         _todayIncome = todayI;
         _weekIncome = weekI;
       });
+    }
+  }
+  Future<void> _loadReminderPreview() async {
+    final entries = await NotificationService.getReminderEntries();
+    final enabledTimes = entries
+        .where((entry) => entry.enabled)
+        .map((entry) => entry.time)
+        .toList();
+
+    final nextReminder = _findNextReminderTime(enabledTimes);
+    if (!mounted) return;
+    setState(() {
+      _reminderEnabled = enabledTimes.isNotEmpty;
+      _nextReminderTime = nextReminder;
+    });
+  }
+
+  String? _findNextReminderTime(List<String> times) {
+    if (times.isEmpty) return null;
+    final now = DateTime.now();
+    DateTime? nextDateTime;
+    String? nextTime;
+
+    for (final time in times) {
+      final parts = time.split(':');
+      final hour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 13 : 13;
+      final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+
+      var candidate = DateTime(now.year, now.month, now.day, hour, minute);
+      if (!candidate.isAfter(now)) {
+        candidate = candidate.add(const Duration(days: 1));
+      }
+
+      if (nextDateTime == null || candidate.isBefore(nextDateTime)) {
+        nextDateTime = candidate;
+        nextTime = '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+      }
+    }
+
+    return nextTime;
+  }
+
+  Future<void> _openReminderSettings() async {
+    final saved = await ReminderSettingsSheet.show(context);
+    if (!mounted) return;
+    await _loadReminderPreview();
+    if (saved && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('提醒设置已保存')),
+      );
     }
   }
 
@@ -85,6 +138,7 @@ class _TabHomePageState extends State<TabHomePage> {
     await Future.wait([
       _loadTotals(),
       context.read<BillProvider>().loadRecentBills(),
+      _loadReminderPreview(),
     ]);
   }
 
@@ -327,8 +381,12 @@ class _TabHomePageState extends State<TabHomePage> {
                     pp.balance,
                     () => pp.syncFromServer(),
                   ),
-                  onReminderTap: () => ReminderSettingsSheet.show(context),
+                  onReminderTap: () {
+                    _openReminderSettings();
+                  },
                   isDark: isDark,
+                  reminderEnabled: _reminderEnabled,
+                  nextReminderTime: _nextReminderTime,
                 ),
               ),
               const SizedBox(height: 24),
@@ -663,12 +721,16 @@ class _PointsAndReminderCard extends StatelessWidget {
   final VoidCallback onPointsTap;
   final VoidCallback onReminderTap;
   final bool isDark;
+  final bool reminderEnabled;
+  final String? nextReminderTime;
 
   const _PointsAndReminderCard({
     required this.balance,
     required this.onPointsTap,
     required this.onReminderTap,
     required this.isDark,
+    required this.reminderEnabled,
+    required this.nextReminderTime,
   });
 
   @override
@@ -677,9 +739,15 @@ class _PointsAndReminderCard extends StatelessWidget {
     final shadow = isDark
         ? AppColors.cardShadowDark
         : AppColors.cardShadowLight;
-    final dividerColor = (isDark ? Colors.white : Colors.black).withOpacity(
-      0.08,
-    );
+    final dividerColor = (isDark ? Colors.white : Colors.black).withOpacity(0.08);
+    final reminderText = reminderEnabled
+        ? (nextReminderTime == null || nextReminderTime!.isEmpty
+              ? '已开启'
+              : '下次 $nextReminderTime')
+        : '已关闭';
+    final reminderTextColor = reminderEnabled
+        ? AppColors.primaryGreen
+        : (isDark ? Colors.white70 : Colors.black54);
 
     return Material(
       color: Colors.transparent,
@@ -697,66 +765,58 @@ class _PointsAndReminderCard extends StatelessWidget {
                 borderRadius: const BorderRadius.horizontal(
                   left: Radius.circular(14),
                 ),
-                child: FutureBuilder<List<String>>(
-                  future: NotificationService.getReminderTimes(),
-                  builder: (context, snap) {
-                    final times = snap.data ?? [];
-                    final nextTime = times.isNotEmpty ? times.first : '13:00';
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryGreen.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.notifications_active_rounded,
+                          color: AppColors.primaryGreen,
+                          size: 22,
+                        ),
                       ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppColors.primaryGreen.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(10),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '提醒记账',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: (isDark ? Colors.white : Colors.black87)
+                                    .withOpacity(0.8),
+                              ),
                             ),
-                            child: Icon(
-                              Icons.notifications_active_rounded,
-                              color: AppColors.primaryGreen,
-                              size: 22,
+                            Text(
+                              reminderText,
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: reminderTextColor,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '提醒记账',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    color:
-                                        (isDark ? Colors.white : Colors.black87)
-                                            .withOpacity(0.8),
-                                  ),
-                                ),
-                                Text(
-                                  '下次 $nextTime',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.primaryGreen,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Icon(
-                            Icons.chevron_right_rounded,
-                            color: Colors.grey[400],
-                            size: 18,
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    );
-                  },
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        color: Colors.grey[400],
+                        size: 18,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
