@@ -580,37 +580,29 @@ class _AnalysisPageState extends State<AnalysisPage> {
                               ),
                             ),
                             const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: FilledButton.icon(
-                                    onPressed: _batchAnalyzing
-                                        ? null
-                                        : _runFilteredAnalysis,
-                                    icon: _batchAnalyzing
-                                        ? const SizedBox(
-                                            width: 18,
-                                            height: 18,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: Colors.white,
-                                            ),
-                                          )
-                                        : const Icon(Icons.analytics_rounded),
-                                    label: Text(
-                                      _batchAnalyzing ? '反省中...' : '反省当前筛选全部数据',
-                                    ),
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: AppColors.primaryGreen,
-                                    ),
-                                  ),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: _batchAnalyzing
+                                    ? null
+                                    : _runFilteredAnalysis,
+                                icon: _batchAnalyzing
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(Icons.analytics_rounded),
+                                label: Text(
+                                  _batchAnalyzing ? '反省中...' : '反省当前筛选全部数据',
                                 ),
-                                const SizedBox(width: 10),
-                                OutlinedButton(
-                                  onPressed: _hasFilters ? _clearFilters : null,
-                                  child: const Text('清空筛选'),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppColors.primaryGreen,
                                 ),
-                              ],
+                              ),
                             ),
                             if (_batchAnalysisError != null) ...[
                               const SizedBox(height: 10),
@@ -807,6 +799,12 @@ class _FilterPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = isDark ? const Color(0xFF252B28) : AppColors.primaryLight;
+    const double controlHeight = 40;
+    const double controlFontSize = 14;
+    const BorderRadius controlRadius = BorderRadius.all(Radius.circular(10));
+    const OutlineInputBorder controlBorder = OutlineInputBorder(
+      borderRadius: controlRadius,
+    );
 
     String dateText = '日期范围';
     if (filterDateRange != null) {
@@ -829,14 +827,17 @@ class _FilterPanel extends StatelessWidget {
         children: [
           SegmentedButton<BillType?>(
             segments: const [
-              ButtonSegment<BillType?>(value: null, label: Text('全部')),
+              ButtonSegment<BillType?>(
+                value: null,
+                label: Text('全部', style: TextStyle(fontSize: controlFontSize)),
+              ),
               ButtonSegment<BillType?>(
                 value: BillType.expense,
-                label: Text('支出'),
+                label: Text('支出', style: TextStyle(fontSize: controlFontSize)),
               ),
               ButtonSegment<BillType?>(
                 value: BillType.income,
-                label: Text('收入'),
+                label: Text('收入', style: TextStyle(fontSize: controlFontSize)),
               ),
             ],
             selected: {filterType},
@@ -846,48 +847,86 @@ class _FilterPanel extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: DropdownButtonFormField<String?>(
-                  value: filterCategory,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: '分类',
-                    border: OutlineInputBorder(),
-                    isDense: true,
+                child: SizedBox(
+                  height: controlHeight,
+                  child: DropdownButtonFormField<String?>(
+                    value: filterCategory,
+                    isExpanded: true,
+                    style: const TextStyle(fontSize: controlFontSize),
+                    decoration: const InputDecoration(
+                      hintText: '分类',
+                      hintStyle: TextStyle(fontSize: controlFontSize),
+                      border: controlBorder,
+                      enabledBorder: controlBorder,
+                      focusedBorder: controlBorder,
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text(
+                          '全部',
+                          style: TextStyle(fontSize: controlFontSize),
+                        ),
+                      ),
+                      ...categoryOptions.map(
+                        (c) => DropdownMenuItem<String?>(
+                          value: c,
+                          child: Text(
+                            c,
+                            style: const TextStyle(fontSize: controlFontSize),
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: onCategoryChanged,
                   ),
-                  items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text('全部'),
-                    ),
-                    ...categoryOptions.map(
-                      (c) =>
-                          DropdownMenuItem<String?>(value: c, child: Text(c)),
-                    ),
-                  ],
-                  onChanged: onCategoryChanged,
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: DropdownButtonFormField<String?>(
-                  value: filterPayMethod,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: '支付方式',
-                    border: OutlineInputBorder(),
-                    isDense: true,
+                child: SizedBox(
+                  height: controlHeight,
+                  child: DropdownButtonFormField<String?>(
+                    value: filterPayMethod,
+                    isExpanded: true,
+                    style: const TextStyle(fontSize: controlFontSize),
+                    decoration: const InputDecoration(
+                      hintText: '支付方式',
+                      hintStyle: TextStyle(fontSize: controlFontSize),
+                      border: controlBorder,
+                      enabledBorder: controlBorder,
+                      focusedBorder: controlBorder,
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text(
+                          '全部',
+                          style: TextStyle(fontSize: controlFontSize),
+                        ),
+                      ),
+                      ...payMethodOptions.map(
+                        (m) => DropdownMenuItem<String?>(
+                          value: m,
+                          child: Text(
+                            m,
+                            style: const TextStyle(fontSize: controlFontSize),
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: onPayMethodChanged,
                   ),
-                  items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text('全部'),
-                    ),
-                    ...payMethodOptions.map(
-                      (m) =>
-                          DropdownMenuItem<String?>(value: m, child: Text(m)),
-                    ),
-                  ],
-                  onChanged: onPayMethodChanged,
                 ),
               ),
             ],
@@ -896,21 +935,47 @@ class _FilterPanel extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: TextField(
-                  controller: noteController,
-                  onChanged: onNoteChanged,
-                  decoration: const InputDecoration(
-                    hintText: '备注',
-                    border: OutlineInputBorder(),
-                    isDense: true,
+                child: SizedBox(
+                  height: controlHeight,
+                  child: TextField(
+                    controller: noteController,
+                    onChanged: onNoteChanged,
+                    style: const TextStyle(fontSize: controlFontSize),
+                    textAlignVertical: TextAlignVertical.center,
+                    decoration: const InputDecoration(
+                      hintText: '备注',
+                      hintStyle: TextStyle(fontSize: controlFontSize),
+                      border: controlBorder,
+                      enabledBorder: controlBorder,
+                      focusedBorder: controlBorder,
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 10),
-              OutlinedButton.icon(
-                onPressed: onPickDateRange,
-                icon: const Icon(Icons.date_range_rounded),
-                label: Text(dateText),
+              SizedBox(
+                height: controlHeight,
+                child: OutlinedButton.icon(
+                  onPressed: onPickDateRange,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    minimumSize: const Size(0, controlHeight),
+                    textStyle: const TextStyle(fontSize: controlFontSize),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  icon: const Icon(Icons.date_range_rounded, size: 18),
+                  label: Text(
+                    dateText,
+                    style: const TextStyle(fontSize: controlFontSize),
+                  ),
+                ),
               ),
             ],
           ),
@@ -920,24 +985,24 @@ class _FilterPanel extends StatelessWidget {
             runSpacing: 8,
             children: [
               ChoiceChip(
-                label: const Text('本周'),
+                label: const Text('本周', style: TextStyle(fontSize: 14)),
                 selected: quickDateRange == 'week',
                 onSelected: (_) => onSelectWeek(),
               ),
               ChoiceChip(
-                label: const Text('本月'),
+                label: const Text('本月', style: TextStyle(fontSize: 14)),
                 selected: quickDateRange == 'month',
                 onSelected: (_) => onSelectMonth(),
               ),
-              if (filterDateRange != null)
-                ActionChip(
-                  label: const Text('清除日期'),
-                  onPressed: onClearDateRange,
-                ),
               if (hasFilters)
                 ActionChip(
-                  label: const Text('清空全部筛选'),
+                  label: const Text('清空筛选', style: TextStyle(fontSize: 14)),
                   onPressed: onClearFilters,
+                ),
+              if (filterDateRange != null)
+                ActionChip(
+                  label: const Text('清除日期', style: TextStyle(fontSize: 14)),
+                  onPressed: onClearDateRange,
                 ),
             ],
           ),
