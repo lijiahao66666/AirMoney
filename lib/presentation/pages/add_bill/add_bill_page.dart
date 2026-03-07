@@ -7,7 +7,9 @@ import '../../../data/models/bill.dart';
 import '../../providers/bill_provider.dart';
 
 class AddBillPage extends StatefulWidget {
-  const AddBillPage({super.key});
+  final Bill? editingBill;
+
+  const AddBillPage({super.key, this.editingBill});
 
   @override
   State<AddBillPage> createState() => _AddBillPageState();
@@ -22,14 +24,29 @@ class _AddBillPageState extends State<AddBillPage> {
   DateTime _date = DateTime.now();
   bool _saving = false;
 
+  bool get _isEditing => widget.editingBill != null;
+
   @override
   void initState() {
     super.initState();
-    _category = AppConstants.expenseCategories.first;
+    final bill = widget.editingBill;
+    if (bill == null) {
+      _category = AppConstants.expenseCategories.first;
+      return;
+    }
+    _type = bill.type;
+    _category = bill.category;
+    _payMethod = bill.payMethod;
+    _date = bill.date;
+    _amountController.text = bill.amount.toStringAsFixed(
+      bill.amount.truncateToDouble() == bill.amount ? 0 : 2,
+    );
+    _noteController.text = bill.note;
   }
 
-  List<String> get _categories =>
-      _type == BillType.expense ? AppConstants.expenseCategories : AppConstants.incomeCategories;
+  List<String> get _categories => _type == BillType.expense
+      ? AppConstants.expenseCategories
+      : AppConstants.incomeCategories;
 
   @override
   void dispose() {
@@ -42,22 +59,29 @@ class _AddBillPageState extends State<AddBillPage> {
     final amountStr = _amountController.text.trim();
     final amount = double.tryParse(amountStr);
     if (amount == null || amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入有效金额')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入有效金额')));
       return;
     }
     setState(() => _saving = true);
     try {
       final bill = Bill(
+        id: widget.editingBill?.id,
         amount: amount,
         category: _category,
         note: _noteController.text.trim(),
         payMethod: _payMethod,
         date: _date,
         type: _type,
+        createdAt: widget.editingBill?.createdAt,
       );
-      await context.read<BillProvider>().addBill(bill);
+      final bp = context.read<BillProvider>();
+      if (_isEditing) {
+        await bp.updateBill(bill);
+      } else {
+        await bp.addBill(bill);
+      }
       if (mounted) {
         Navigator.of(context).pop();
       }
@@ -77,7 +101,7 @@ class _AddBillPageState extends State<AddBillPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('记一笔'),
+        title: Text(_isEditing ? '编辑记录' : '记一笔'),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.of(context).pop(),
@@ -88,7 +112,10 @@ class _AddBillPageState extends State<AddBillPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('类型', style: TextStyle(fontSize: 14, color: AppColors.neutralGrey)),
+            const Text(
+              '类型',
+              style: TextStyle(fontSize: 14, color: AppColors.neutralGrey),
+            ),
             const SizedBox(height: 8),
             SegmentedButton<BillType>(
               segments: const [
@@ -107,11 +134,16 @@ class _AddBillPageState extends State<AddBillPage> {
               onSelectionChanged: (s) => _onTypeChanged(s.first),
             ),
             const SizedBox(height: 24),
-            const Text('金额', style: TextStyle(fontSize: 14, color: AppColors.neutralGrey)),
+            const Text(
+              '金额',
+              style: TextStyle(fontSize: 14, color: AppColors.neutralGrey),
+            ),
             const SizedBox(height: 8),
             TextField(
               controller: _amountController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
               decoration: InputDecoration(
                 hintText: '0',
@@ -122,7 +154,10 @@ class _AddBillPageState extends State<AddBillPage> {
               ),
             ),
             const SizedBox(height: 24),
-            const Text('分类', style: TextStyle(fontSize: 14, color: AppColors.neutralGrey)),
+            const Text(
+              '分类',
+              style: TextStyle(fontSize: 14, color: AppColors.neutralGrey),
+            ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -138,7 +173,10 @@ class _AddBillPageState extends State<AddBillPage> {
               }).toList(),
             ),
             const SizedBox(height: 24),
-            const Text('备注', style: TextStyle(fontSize: 14, color: AppColors.neutralGrey)),
+            const Text(
+              '备注',
+              style: TextStyle(fontSize: 14, color: AppColors.neutralGrey),
+            ),
             const SizedBox(height: 8),
             TextField(
               controller: _noteController,
@@ -150,7 +188,10 @@ class _AddBillPageState extends State<AddBillPage> {
               ),
             ),
             const SizedBox(height: 24),
-            const Text('支付方式', style: TextStyle(fontSize: 14, color: AppColors.neutralGrey)),
+            const Text(
+              '支付方式',
+              style: TextStyle(fontSize: 14, color: AppColors.neutralGrey),
+            ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
               value: _payMethod,
@@ -165,7 +206,10 @@ class _AddBillPageState extends State<AddBillPage> {
               onChanged: (v) => setState(() => _payMethod = v ?? _payMethod),
             ),
             const SizedBox(height: 24),
-            const Text('日期', style: TextStyle(fontSize: 14, color: AppColors.neutralGrey)),
+            const Text(
+              '日期',
+              style: TextStyle(fontSize: 14, color: AppColors.neutralGrey),
+            ),
             const SizedBox(height: 8),
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -199,7 +243,7 @@ class _AddBillPageState extends State<AddBillPage> {
                         width: 24,
                         child: CircularProgressIndicator(color: Colors.white),
                       )
-                    : const Text('保存'),
+                    : Text(_isEditing ? '保存修改' : '保存'),
               ),
             ),
           ],

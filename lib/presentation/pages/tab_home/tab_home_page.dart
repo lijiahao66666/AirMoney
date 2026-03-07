@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/app_colors.dart';
@@ -27,11 +28,25 @@ class _TabHomePageState extends State<TabHomePage> {
   double _weekIncome = 0;
   static const int _recentBillsMaxShown = 10;
   bool _recentBillsExpanded = false;
+  bool _billsLoading = false;
+  List<Bill> _allBills = [];
+  BillType? _filterType;
+  String? _filterCategory;
+  String? _filterPayMethod;
+  DateTimeRange? _filterDateRange;
+  final TextEditingController _noteFilterController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _loadTotals();
+    _loadBills();
+  }
+
+  @override
+  void dispose() {
+    _noteFilterController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadTotals() async {
@@ -48,6 +63,165 @@ class _TabHomePageState extends State<TabHomePage> {
         _weekIncome = weekI;
       });
     }
+  }
+
+  Future<void> _loadBills() async {
+    if (mounted) {
+      setState(() => _billsLoading = true);
+    }
+    try {
+      final bills = await context.read<BillProvider>().getAllBills();
+      if (!mounted) return;
+      setState(() {
+        _allBills = bills;
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _billsLoading = false);
+      }
+    }
+  }
+
+  Future<void> _refreshAllData() async {
+    await Future.wait([
+      _loadTotals(),
+      _loadBills(),
+      context.read<BillProvider>().loadRecentBills(),
+    ]);
+  }
+
+  List<String> get _categoryOptions {
+    final base = _filterType == BillType.expense
+        ? AppConstants.expenseCategories
+        : _filterType == BillType.income
+        ? AppConstants.incomeCategories
+        : [...AppConstants.expenseCategories, ...AppConstants.incomeCategories];
+    final set = <String>{...base};
+    for (final bill in _allBills) {
+      if (_filterType != null && bill.type != _filterType) continue;
+      set.add(bill.category);
+    }
+    final list = set.toList();
+    list.sort();
+    return list;
+  }
+
+  List<Bill> get _filteredBills {
+    final noteKeyword = _noteFilterController.text.trim().toLowerCase();
+    final range = _filterDateRange;
+    final start = range?.start;
+    final end = range?.end;
+    return _allBills.where((bill) {
+      if (_filterType != null && bill.type != _filterType) return false;
+      if (_filterCategory != null &&
+          _filterCategory!.isNotEmpty &&
+          bill.category != _filterCategory) {
+        return false;
+      }
+      if (_filterPayMethod != null &&
+          _filterPayMethod!.isNotEmpty &&
+          bill.payMethod != _filterPayMethod) {
+        return false;
+      }
+      if (noteKeyword.isNotEmpty &&
+          !bill.note.toLowerCase().contains(noteKeyword)) {
+        return false;
+      }
+      if (start != null && end != null) {
+        final d = DateTime(bill.date.year, bill.date.month, bill.date.day);
+        final rangeStart = DateTime(start.year, start.month, start.day);
+        final rangeEnd = DateTime(end.year, end.month, end.day);
+        if (d.isBefore(rangeStart) || d.isAfter(rangeEnd)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
+  Future<void> _pickFilterDateRange() async {
+    final now = DateTime.now();
+    final initial =
+        _filterDateRange ??
+        DateTimeRange(
+          start: DateTime(
+            now.year,
+            now.month,
+            now.day,
+          ).subtract(const Duration(days: 30)),
+          end: DateTime(now.year, now.month, now.day),
+        );
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: now,
+      initialDateRange: initial,
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _filterDateRange = picked;
+        _recentBillsExpanded = false;
+      });
+    }
+  }
+
+  void _clearFilters() {
+    _noteFilterController.clear();
+    setState(() {
+      _filterType = null;
+      _filterCategory = null;
+      _filterPayMethod = null;
+      _filterDateRange = null;
+      _recentBillsExpanded = false;
+    });
+  }
+
+  Future<void> _deleteRecentBill(Bill bill) async {
+    final id = bill.id;
+    if (id == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除记录'),
+        content: Text(
+          '确定删除这条记录吗？\n${bill.category}  ¥${bill.amount.toStringAsFixed(0)}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final bp = context.read<BillProvider>();
+    final deleted = await bp.deleteBill(id);
+    if (!mounted) return;
+    if (deleted) {
+      await _refreshAllData();
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(deleted ? '记录已删除' : '删除失败，请重试'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _editRecentBill(Bill bill) async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => AddBillPage(editingBill: bill)));
+    if (!mounted) return;
+    await _refreshAllData();
   }
 
   @override
@@ -67,7 +241,8 @@ class _TabHomePageState extends State<TabHomePage> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 11,
-                color: (isDark ? Colors.white70 : AppColors.deepText).withOpacity(0.35),
+                color: (isDark ? Colors.white70 : AppColors.deepText)
+                    .withOpacity(0.35),
               ),
             ),
           ),
@@ -85,7 +260,10 @@ class _TabHomePageState extends State<TabHomePage> {
                 blendMode: BlendMode.srcIn,
                 shaderCallback: (bounds) => LinearGradient(
                   colors: isDark
-                      ? [AppColors.primaryGreen, AppColors.primaryGreen.withOpacity(0.85)]
+                      ? [
+                          AppColors.primaryGreen,
+                          AppColors.primaryGreen.withOpacity(0.85),
+                        ]
                       : [AppColors.primaryGreen, AppColors.primaryDark],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -106,7 +284,8 @@ class _TabHomePageState extends State<TabHomePage> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.normal,
-                  color: (isDark ? Colors.white70 : AppColors.deepText).withOpacity(0.7),
+                  color: (isDark ? Colors.white70 : AppColors.deepText)
+                      .withOpacity(0.7),
                 ),
               ),
             ],
@@ -114,10 +293,7 @@ class _TabHomePageState extends State<TabHomePage> {
         ),
       ),
       body: RefreshIndicator(
-        onRefresh: () async {
-          context.read<BillProvider>().loadRecentBills();
-          await _loadTotals();
-        },
+        onRefresh: _refreshAllData,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
@@ -135,7 +311,7 @@ class _TabHomePageState extends State<TabHomePage> {
                   await Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const AddBillPage()),
                   );
-                  if (mounted) await _loadTotals();
+                  if (mounted) await _refreshAllData();
                 },
               ),
               const SizedBox(height: 20),
@@ -160,9 +336,45 @@ class _TabHomePageState extends State<TabHomePage> {
               const SizedBox(height: 24),
               _SectionTitle(icon: Icons.receipt_long_rounded, label: '最近记录'),
               const SizedBox(height: 12),
-              Consumer<BillProvider>(
-                builder: (_, bp, __) {
-                  if (bp.loading && bp.recentBills.isEmpty) {
+              _BillFilterPanel(
+                filterType: _filterType,
+                filterCategory: _filterCategory,
+                filterPayMethod: _filterPayMethod,
+                filterDateRange: _filterDateRange,
+                noteController: _noteFilterController,
+                categoryOptions: _categoryOptions,
+                onTypeChanged: (type) {
+                  setState(() {
+                    _filterType = type;
+                    if (_filterCategory != null &&
+                        !_categoryOptions.contains(_filterCategory)) {
+                      _filterCategory = null;
+                    }
+                    _recentBillsExpanded = false;
+                  });
+                },
+                onCategoryChanged: (category) {
+                  setState(() {
+                    _filterCategory = category;
+                    _recentBillsExpanded = false;
+                  });
+                },
+                onPayMethodChanged: (method) {
+                  setState(() {
+                    _filterPayMethod = method;
+                    _recentBillsExpanded = false;
+                  });
+                },
+                onNoteChanged: (_) =>
+                    setState(() => _recentBillsExpanded = false),
+                onPickDateRange: _pickFilterDateRange,
+                onClear: _clearFilters,
+              ),
+              const SizedBox(height: 12),
+              Builder(
+                builder: (_) {
+                  final bills = _filteredBills;
+                  if (_billsLoading && _allBills.isEmpty) {
                     return const Center(
                       child: Padding(
                         padding: EdgeInsets.all(24),
@@ -170,19 +382,27 @@ class _TabHomePageState extends State<TabHomePage> {
                       ),
                     );
                   }
-                  if (bp.recentBills.isEmpty) {
-                    return _EmptyHint(onAdd: () async {
-                      await Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const AddBillPage()),
+                  if (bills.isEmpty) {
+                    if (_allBills.isEmpty) {
+                      return _EmptyHint(
+                        onAdd: () async {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const AddBillPage(),
+                            ),
+                          );
+                          if (mounted) await _refreshAllData();
+                        },
                       );
-                      if (mounted) await _loadTotals();
-                    });
+                    }
+                    return _EmptyFilteredHint(onClearFilters: _clearFilters);
                   }
-                  final total = bp.recentBills.length;
+                  final total = bills.length;
                   final showCount = _recentBillsExpanded
                       ? total
                       : total.clamp(0, _recentBillsMaxShown);
-                  final hasMore = total > _recentBillsMaxShown && !_recentBillsExpanded;
+                  final hasMore =
+                      total > _recentBillsMaxShown && !_recentBillsExpanded;
 
                   return Column(
                     mainAxisSize: MainAxisSize.min,
@@ -192,15 +412,20 @@ class _TabHomePageState extends State<TabHomePage> {
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: showCount,
                         itemBuilder: (_, i) {
-                          final b = bp.recentBills[i];
-                          return _BillTile(bill: b);
+                          final b = bills[i];
+                          return _BillTile(
+                            bill: b,
+                            onEdit: () => _editRecentBill(b),
+                            onDelete: () => _deleteRecentBill(b),
+                          );
                         },
                       ),
                       if (hasMore)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: InkWell(
-                            onTap: () => setState(() => _recentBillsExpanded = true),
+                            onTap: () =>
+                                setState(() => _recentBillsExpanded = true),
                             borderRadius: BorderRadius.circular(12),
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -245,7 +470,9 @@ void _openAnalysisOrPrompt(BuildContext context) {
     _showPointsRequiredSheet(context, '花哪了');
     return;
   }
-  Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AnalysisPage()));
+  Navigator.of(
+    context,
+  ).push(MaterialPageRoute(builder: (_) => const AnalysisPage()));
 }
 
 void _openConsultOrPrompt(BuildContext context) {
@@ -254,7 +481,9 @@ void _openConsultOrPrompt(BuildContext context) {
     _showPointsRequiredSheet(context, '该不该花');
     return;
   }
-  Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ConsultPage()));
+  Navigator.of(
+    context,
+  ).push(MaterialPageRoute(builder: (_) => const ConsultPage()));
 }
 
 class _SectionTitle extends StatelessWidget {
@@ -284,6 +513,197 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
+class _BillFilterPanel extends StatelessWidget {
+  final BillType? filterType;
+  final String? filterCategory;
+  final String? filterPayMethod;
+  final DateTimeRange? filterDateRange;
+  final TextEditingController noteController;
+  final List<String> categoryOptions;
+  final ValueChanged<BillType?> onTypeChanged;
+  final ValueChanged<String?> onCategoryChanged;
+  final ValueChanged<String?> onPayMethodChanged;
+  final ValueChanged<String> onNoteChanged;
+  final VoidCallback onPickDateRange;
+  final VoidCallback onClear;
+
+  const _BillFilterPanel({
+    required this.filterType,
+    required this.filterCategory,
+    required this.filterPayMethod,
+    required this.filterDateRange,
+    required this.noteController,
+    required this.categoryOptions,
+    required this.onTypeChanged,
+    required this.onCategoryChanged,
+    required this.onPayMethodChanged,
+    required this.onNoteChanged,
+    required this.onPickDateRange,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? const Color(0xFF252B28) : AppColors.primaryLight;
+    final shadow = isDark
+        ? AppColors.cardShadowDark
+        : AppColors.cardShadowLight;
+    final textColor = isDark ? Colors.white70 : AppColors.deepText;
+    final rangeText = filterDateRange == null
+        ? '不限日期'
+        : '${DateFormat('yyyy-MM-dd').format(filterDateRange!.start)} ~ ${DateFormat('yyyy-MM-dd').format(filterDateRange!.end)}';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: shadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '筛选',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: textColor,
+                ),
+              ),
+              const Spacer(),
+              TextButton(onPressed: onClear, child: const Text('重置')),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('全部'),
+                selected: filterType == null,
+                onSelected: (_) => onTypeChanged(null),
+              ),
+              ChoiceChip(
+                label: const Text('支出'),
+                selected: filterType == BillType.expense,
+                onSelected: (_) => onTypeChanged(BillType.expense),
+              ),
+              ChoiceChip(
+                label: const Text('收入'),
+                selected: filterType == BillType.income,
+                onSelected: (_) => onTypeChanged(BillType.income),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  value: filterCategory ?? '',
+                  decoration: const InputDecoration(
+                    labelText: '分类',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: '', child: Text('全部分类')),
+                    ...categoryOptions.map(
+                      (c) => DropdownMenuItem(value: c, child: Text(c)),
+                    ),
+                  ],
+                  onChanged: (v) =>
+                      onCategoryChanged((v == null || v.isEmpty) ? null : v),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  value: filterPayMethod ?? '',
+                  decoration: const InputDecoration(
+                    labelText: '支付方式',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: '', child: Text('全部方式')),
+                    ...AppConstants.payMethods.map(
+                      (p) => DropdownMenuItem(value: p, child: Text(p)),
+                    ),
+                  ],
+                  onChanged: (v) =>
+                      onPayMethodChanged((v == null || v.isEmpty) ? null : v),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: noteController,
+            onChanged: onNoteChanged,
+            decoration: const InputDecoration(
+              labelText: '备注关键词（可选）',
+              hintText: '输入关键词筛选备注',
+              isDense: true,
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.search),
+            ),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: onPickDateRange,
+            icon: const Icon(Icons.date_range_rounded, size: 18),
+            label: Text(
+              rangeText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyFilteredHint extends StatelessWidget {
+  final VoidCallback onClearFilters;
+
+  const _EmptyFilteredHint({required this.onClearFilters});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.filter_alt_off_rounded, color: Colors.grey[600], size: 30),
+          const SizedBox(height: 8),
+          Text('当前筛选条件下没有记录', style: TextStyle(color: Colors.grey[700])),
+          const SizedBox(height: 10),
+          TextButton.icon(
+            onPressed: onClearFilters,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('清空筛选'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 void _showPointsRequiredSheet(BuildContext context, String featureName) {
   final pp = context.read<PointsProvider>();
   showModalBottomSheet(
@@ -296,7 +716,11 @@ void _showPointsRequiredSheet(BuildContext context, String featureName) {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.account_balance_wallet_outlined, size: 48, color: Colors.orange[300]),
+          Icon(
+            Icons.account_balance_wallet_outlined,
+            size: 48,
+            color: Colors.orange[300],
+          ),
           const SizedBox(height: 16),
           Text(
             '$featureName需要积分',
@@ -321,9 +745,15 @@ void _showPointsRequiredSheet(BuildContext context, String featureName) {
                 child: FilledButton(
                   onPressed: () {
                     Navigator.pop(ctx);
-                    WalletSheet.show(context, pp.balance, () => pp.syncFromServer());
+                    WalletSheet.show(
+                      context,
+                      pp.balance,
+                      () => pp.syncFromServer(),
+                    );
                   },
-                  style: FilledButton.styleFrom(backgroundColor: AppColors.primaryGreen),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primaryGreen,
+                  ),
                   child: const Text('去获取积分'),
                 ),
               ),
@@ -351,8 +781,12 @@ class _PointsAndReminderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cardBg = isDark ? const Color(0xFF252B28) : AppColors.primaryLight;
-    final shadow = isDark ? AppColors.cardShadowDark : AppColors.cardShadowLight;
-    final dividerColor = (isDark ? Colors.white : Colors.black).withOpacity(0.08);
+    final shadow = isDark
+        ? AppColors.cardShadowDark
+        : AppColors.cardShadowLight;
+    final dividerColor = (isDark ? Colors.white : Colors.black).withOpacity(
+      0.08,
+    );
 
     return Material(
       color: Colors.transparent,
@@ -367,14 +801,19 @@ class _PointsAndReminderCard extends StatelessWidget {
             Expanded(
               child: InkWell(
                 onTap: onReminderTap,
-                borderRadius: const BorderRadius.horizontal(left: Radius.circular(14)),
+                borderRadius: const BorderRadius.horizontal(
+                  left: Radius.circular(14),
+                ),
                 child: FutureBuilder<List<String>>(
                   future: NotificationService.getReminderTimes(),
                   builder: (context, snap) {
                     final times = snap.data ?? [];
                     final nextTime = times.isNotEmpty ? times.first : '13:00';
                     return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
                       child: Row(
                         children: [
                           Container(
@@ -383,7 +822,11 @@ class _PointsAndReminderCard extends StatelessWidget {
                               color: AppColors.primaryGreen.withOpacity(0.15),
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: Icon(Icons.notifications_active_rounded, color: AppColors.primaryGreen, size: 22),
+                            child: Icon(
+                              Icons.notifications_active_rounded,
+                              color: AppColors.primaryGreen,
+                              size: 22,
+                            ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -396,7 +839,9 @@ class _PointsAndReminderCard extends StatelessWidget {
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,
-                                    color: (isDark ? Colors.white : Colors.black87).withOpacity(0.8),
+                                    color:
+                                        (isDark ? Colors.white : Colors.black87)
+                                            .withOpacity(0.8),
                                   ),
                                 ),
                                 Text(
@@ -410,7 +855,11 @@ class _PointsAndReminderCard extends StatelessWidget {
                               ],
                             ),
                           ),
-                          Icon(Icons.chevron_right_rounded, color: Colors.grey[400], size: 18),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            color: Colors.grey[400],
+                            size: 18,
+                          ),
                         ],
                       ),
                     );
@@ -418,17 +867,18 @@ class _PointsAndReminderCard extends StatelessWidget {
                 ),
               ),
             ),
-            Container(
-              width: 1,
-              height: 40,
-              color: dividerColor,
-            ),
+            Container(width: 1, height: 40, color: dividerColor),
             Expanded(
               child: InkWell(
                 onTap: onPointsTap,
-                borderRadius: const BorderRadius.horizontal(right: Radius.circular(14)),
+                borderRadius: const BorderRadius.horizontal(
+                  right: Radius.circular(14),
+                ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                   child: Row(
                     children: [
                       Container(
@@ -437,7 +887,11 @@ class _PointsAndReminderCard extends StatelessWidget {
                           color: AppColors.pointsGold.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Icon(Icons.account_balance_wallet_rounded, color: AppColors.pointsGold, size: 22),
+                        child: Icon(
+                          Icons.account_balance_wallet_rounded,
+                          color: AppColors.pointsGold,
+                          size: 22,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -450,7 +904,8 @@ class _PointsAndReminderCard extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
-                                color: (isDark ? Colors.white : Colors.black87).withOpacity(0.8),
+                                color: (isDark ? Colors.white : Colors.black87)
+                                    .withOpacity(0.8),
                               ),
                             ),
                             Text(
@@ -465,7 +920,11 @@ class _PointsAndReminderCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                      Icon(Icons.chevron_right_rounded, color: Colors.grey[400], size: 18),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        color: Colors.grey[400],
+                        size: 18,
+                      ),
                     ],
                   ),
                 ),
@@ -539,8 +998,12 @@ class _ShortcutCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cardBg = isDark ? const Color(0xFF252B28) : AppColors.primaryLight;
-    final shadow = isDark ? AppColors.cardShadowDark : AppColors.cardShadowLight;
-    final accentColor = isPrimary ? AppColors.primaryGreen : AppColors.pointsGold;
+    final shadow = isDark
+        ? AppColors.cardShadowDark
+        : AppColors.cardShadowLight;
+    final accentColor = isPrimary
+        ? AppColors.primaryGreen
+        : AppColors.pointsGold;
     return Material(
       color: Colors.transparent,
       child: Container(
@@ -577,10 +1040,7 @@ class _ShortcutCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -614,7 +1074,9 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shadow = isDark ? AppColors.cardShadowDark : AppColors.cardShadowLight;
+    final shadow = isDark
+        ? AppColors.cardShadowDark
+        : AppColors.cardShadowLight;
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -657,7 +1119,9 @@ class _SummaryCard extends StatelessWidget {
                 const SizedBox(height: 20),
                 Container(
                   height: 1,
-                  color: (isDark ? Colors.white : Colors.black).withOpacity(0.08),
+                  color: (isDark ? Colors.white : Colors.black).withOpacity(
+                    0.08,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -749,7 +1213,10 @@ class _SummaryItem extends StatelessWidget {
           children: [
             Icon(icon, size: 14, color: color.withOpacity(0.8)),
             const SizedBox(width: 6),
-            Text(label, style: TextStyle(fontSize: 13, color: AppColors.neutralGrey)),
+            Text(
+              label,
+              style: TextStyle(fontSize: 13, color: AppColors.neutralGrey),
+            ),
           ],
         ),
         const SizedBox(height: 6),
@@ -769,24 +1236,43 @@ class _SummaryItem extends StatelessWidget {
 
 class _BillTile extends StatelessWidget {
   final Bill bill;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
-  const _BillTile({required this.bill});
+  const _BillTile({
+    required this.bill,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   IconData _iconFromName(String iconName) {
     switch (iconName) {
-      case 'restaurant': return Icons.restaurant;
-      case 'directions_car': return Icons.directions_car;
-      case 'shopping_cart': return Icons.shopping_cart;
-      case 'movie': return Icons.movie;
-      case 'home': return Icons.home;
-      case 'local_hospital': return Icons.local_hospital;
-      case 'school': return Icons.school;
-      case 'work': return Icons.work;
-      case 'emoji_events': return Icons.emoji_events;
-      case 'handyman': return Icons.handyman;
-      case 'trending_up': return Icons.trending_up;
-      case 'redeem': return Icons.redeem;
-      default: return Icons.more_horiz;
+      case 'restaurant':
+        return Icons.restaurant;
+      case 'directions_car':
+        return Icons.directions_car;
+      case 'shopping_cart':
+        return Icons.shopping_cart;
+      case 'movie':
+        return Icons.movie;
+      case 'home':
+        return Icons.home;
+      case 'local_hospital':
+        return Icons.local_hospital;
+      case 'school':
+        return Icons.school;
+      case 'work':
+        return Icons.work;
+      case 'emoji_events':
+        return Icons.emoji_events;
+      case 'handyman':
+        return Icons.handyman;
+      case 'trending_up':
+        return Icons.trending_up;
+      case 'redeem':
+        return Icons.redeem;
+      default:
+        return Icons.more_horiz;
     }
   }
 
@@ -796,65 +1282,117 @@ class _BillTile extends StatelessWidget {
     final iconName = AppConstants.categoryIcons[bill.category] ?? 'more_horiz';
     final icon = _iconFromName(iconName);
     final isIncome = bill.isIncome;
-    final amountColor = isIncome ? AppColors.primaryGreen : AppColors.expenseRed;
+    final amountColor = isIncome
+        ? AppColors.primaryGreen
+        : AppColors.expenseRed;
     final prefix = isIncome ? '+' : '-';
     final cardBg = isDark ? const Color(0xFF252B28) : AppColors.primaryLight;
-    final shadow = isDark ? AppColors.cardShadowDark : AppColors.cardShadowLight;
+    final shadow = isDark
+        ? AppColors.cardShadowDark
+        : AppColors.cardShadowLight;
+    final id = bill.id ?? bill.createdAt.millisecondsSinceEpoch;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: cardBg,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: shadow,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: amountColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(12),
+      child: Slidable(
+        key: ValueKey('bill-$id'),
+        startActionPane: ActionPane(
+          motion: const DrawerMotion(),
+          extentRatio: 0.44,
+          children: [
+            SlidableAction(
+              onPressed: (_) => onEdit(),
+              backgroundColor: AppColors.primaryGreen,
+              foregroundColor: Colors.white,
+              icon: Icons.edit_rounded,
+              label: '编辑',
+              borderRadius: BorderRadius.circular(12),
+            ),
+            SlidableAction(
+              onPressed: (_) => onDelete(),
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              icon: Icons.delete_outline_rounded,
+              label: '删除',
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ],
+        ),
+        endActionPane: ActionPane(
+          motion: const DrawerMotion(),
+          extentRatio: 0.44,
+          children: [
+            SlidableAction(
+              onPressed: (_) => onEdit(),
+              backgroundColor: AppColors.primaryGreen,
+              foregroundColor: Colors.white,
+              icon: Icons.edit_rounded,
+              label: '编辑',
+              borderRadius: BorderRadius.circular(12),
+            ),
+            SlidableAction(
+              onPressed: (_) => onDelete(),
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              icon: Icons.delete_outline_rounded,
+              label: '删除',
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: shadow,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: amountColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: amountColor, size: 22),
                 ),
-                child: Icon(icon, color: amountColor, size: 22),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${isIncome ? '收入' : '支出'} · ${bill.category}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                        color: isDark ? Colors.white : Colors.black87,
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${isIncome ? '收入' : '支出'} · ${bill.category}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      bill.note.isEmpty
-                          ? DateFormat('yyyy-MM-dd').format(bill.date)
-                          : '${bill.note} · ${DateFormat('yyyy-MM-dd').format(bill.date)}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      Text(
+                        bill.note.isEmpty
+                            ? '${bill.payMethod} · ${DateFormat('yyyy-MM-dd').format(bill.date)}'
+                            : '${bill.note} · ${bill.payMethod} · ${DateFormat('yyyy-MM-dd').format(bill.date)}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Text(
-                '$prefix¥${bill.amount.toStringAsFixed(0)}',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: amountColor,
+                Text(
+                  '$prefix¥${bill.amount.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: amountColor,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -871,10 +1409,13 @@ class _EmptyHint extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = isDark ? const Color(0xFF252B28) : AppColors.primaryLight;
-    final shadow = isDark ? AppColors.cardShadowDark : AppColors.cardShadowLight;
+    final shadow = isDark
+        ? AppColors.cardShadowDark
+        : AppColors.cardShadowLight;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 24),
       child: Container(
+        width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
         decoration: BoxDecoration(
           color: cardBg,
@@ -889,7 +1430,11 @@ class _EmptyHint extends StatelessWidget {
                 color: AppColors.primaryGreen.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.savings_rounded, size: 56, color: AppColors.primaryGreen.withOpacity(0.8)),
+              child: Icon(
+                Icons.savings_rounded,
+                size: 56,
+                color: AppColors.primaryGreen.withOpacity(0.8),
+              ),
             ),
             const SizedBox(height: 24),
             Text(
@@ -914,7 +1459,10 @@ class _EmptyHint extends StatelessWidget {
               label: const Text('记一笔'),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primaryGreen,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
               ),
             ),
           ],

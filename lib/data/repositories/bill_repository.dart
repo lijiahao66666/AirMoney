@@ -9,7 +9,19 @@ class BillRepository {
     return _storage.insert(bill);
   }
 
-  Future<List<Bill>> getBillsInRange(DateTime start, DateTime end, {BillType? type}) async {
+  Future<int> updateById(int id, Bill bill) async {
+    return _storage.updateById(id, bill);
+  }
+
+  Future<int> deleteById(int id) async {
+    return _storage.deleteById(id);
+  }
+
+  Future<List<Bill>> getBillsInRange(
+    DateTime start,
+    DateTime end, {
+    BillType? type,
+  }) async {
     final startStr = start.toIso8601String().substring(0, 10);
     final endStr = end.toIso8601String().substring(0, 10);
     String where = 'date >= ? AND date <= ?';
@@ -27,17 +39,24 @@ class BillRepository {
   }
 
   Future<List<Bill>> getRecentBills({int limit = 20}) async {
-    final maps = await _storage.query(
-      orderBy: 'created_at DESC',
-      limit: limit,
-    );
+    final maps = await _storage.query(orderBy: 'created_at DESC', limit: limit);
     return maps.map((m) => Bill.fromMap(m)).toList();
   }
 
-  Future<double> getTotalInRange(DateTime start, DateTime end, {BillType? type}) async {
+  Future<List<Bill>> getAllBills() async {
+    final maps = await _storage.query(orderBy: 'created_at DESC');
+    return maps.map((m) => Bill.fromMap(m)).toList();
+  }
+
+  Future<double> getTotalInRange(
+    DateTime start,
+    DateTime end, {
+    BillType? type,
+  }) async {
     final startStr = start.toIso8601String().substring(0, 10);
     final endStr = end.toIso8601String().substring(0, 10);
-    String sql = 'SELECT SUM(amount) as total FROM bills WHERE date >= ? AND date <= ?';
+    String sql =
+        'SELECT SUM(amount) as total FROM bills WHERE date >= ? AND date <= ?';
     List<dynamic> args = [startStr, endStr];
     if (type != null) {
       sql += " AND type = ?";
@@ -55,11 +74,14 @@ class BillRepository {
   }) async {
     final startStr = start.toIso8601String().substring(0, 10);
     final endStr = end.toIso8601String().substring(0, 10);
-    final result = await _storage.rawQuery('''
+    final result = await _storage.rawQuery(
+      '''
       SELECT category, SUM(amount) as total
       FROM bills WHERE date >= ? AND date <= ? AND type = ?
       GROUP BY category
-    ''', [startStr, endStr, type.value]);
+    ''',
+      [startStr, endStr, type.value],
+    );
     final map = <String, double>{};
     for (final row in result) {
       final cat = row['category'] as String? ?? '其他';

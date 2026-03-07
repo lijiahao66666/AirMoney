@@ -11,6 +11,40 @@ import '../../providers/bill_provider.dart';
 import '../../providers/points_provider.dart';
 import '../../widgets/wallet_sheet.dart';
 
+const List<String> _assistantMetaMarkers = <String>[
+  '追问',
+  '细节',
+  '幽默',
+  '理解',
+  '认同',
+  '共情',
+  '过渡',
+  '回应',
+  '反应',
+  '标签',
+  '动作',
+  '策略',
+  '意图',
+  '分析',
+  '总结',
+  '建议',
+  '提问',
+];
+
+String _stripAssistantMetaTags(String text) {
+  if (text.isEmpty) return text;
+  final pattern = RegExp(r'[（(]\s*([^（）()]{1,24})\s*[)）]');
+  final cleaned = text.replaceAllMapped(pattern, (m) {
+    final inside = (m.group(1) ?? '').replaceAll(RegExp(r'\s+'), '');
+    final isMetaTag = _assistantMetaMarkers.any(inside.contains);
+    return isMetaTag ? '' : (m.group(0) ?? '');
+  });
+  return cleaned
+      .replaceAll(RegExp(r'[ \t]{2,}'), ' ')
+      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+      .trimRight();
+}
+
 class ConsultPage extends StatefulWidget {
   const ConsultPage({super.key});
 
@@ -22,6 +56,7 @@ class _ConsultPageState extends State<ConsultPage> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   List<ConsultMessage> _messages = [];
+  String _streamingRawContent = '';
   String _streamingContent = '';
   String? _streamingReasoning;
   List<AgentStep> _agentSteps = [];
@@ -71,6 +106,7 @@ class _ConsultPageState extends State<ConsultPage> {
       setState(() {
         _currentSession = s;
         _messages = List.from(s.messages);
+        _streamingRawContent = '';
         _streamingContent = '';
         _streamingReasoning = null;
         _agentSteps = [];
@@ -88,6 +124,7 @@ class _ConsultPageState extends State<ConsultPage> {
         _currentSession = s;
         _sessions = ConsultSessionStorage.sessions;
         _messages = [];
+        _streamingRawContent = '';
         _streamingContent = '';
         _streamingReasoning = null;
         _agentSteps = [];
@@ -112,6 +149,7 @@ class _ConsultPageState extends State<ConsultPage> {
     setState(() {
       _messages.add(ConsultMessage(role: 'user', content: text));
       _loading = true;
+      _streamingRawContent = '';
       _streamingContent = '';
       _streamingReasoning = null;
       _agentSteps = [];
@@ -119,14 +157,17 @@ class _ConsultPageState extends State<ConsultPage> {
     await ConsultSessionStorage.appendMessage(_currentSession!.id, 'user', text);
     _scrollToBottom();
 
+    final shouldRunIntentAnalysis = !_messages.any((m) => m.role == 'assistant');
     final bp = context.read<BillProvider>();
     Map<String, double>? recentSpending;
-    try {
-      final now = DateTime.now();
-      final start = now.subtract(const Duration(days: 30));
-      recentSpending = await bp.getCategoryTotalsInRange(start, now, type: BillType.expense);
-      if (recentSpending.isEmpty) recentSpending = null;
-    } catch (_) {}
+    if (shouldRunIntentAnalysis) {
+      try {
+        final now = DateTime.now();
+        final start = now.subtract(const Duration(days: 30));
+        recentSpending = await bp.getCategoryTotalsInRange(start, now, type: BillType.expense);
+        if (recentSpending.isEmpty) recentSpending = null;
+      } catch (_) {}
+    }
 
     final history = _messages.map((m) => {'role': m.role, 'content': m.content}).toList();
     final pp = context.read<PointsProvider>();
@@ -135,6 +176,7 @@ class _ConsultPageState extends State<ConsultPage> {
       await for (final chunk in consultStream(
         conversationHistory: history,
         recentCategorySpending: recentSpending,
+        enableAgentSteps: shouldRunIntentAnalysis,
       )) {
         if (!mounted) return;
         if (chunk.pointsBalance != null) {
@@ -148,7 +190,8 @@ class _ConsultPageState extends State<ConsultPage> {
             _streamingReasoning = (_streamingReasoning ?? '') + chunk.reasoningContent!;
           }
           if (chunk.content.isNotEmpty) {
-            _streamingContent += chunk.content;
+            _streamingRawContent += chunk.content;
+            _streamingContent = _stripAssistantMetaTags(_streamingRawContent);
           }
           if (chunk.isComplete) {
             _loading = false;
@@ -167,6 +210,7 @@ class _ConsultPageState extends State<ConsultPage> {
                 agentSteps: _agentSteps.isNotEmpty ? _agentSteps : null,
               );
             }
+            _streamingRawContent = '';
             _streamingContent = '';
             _streamingReasoning = null;
             _agentSteps = [];
@@ -182,6 +226,7 @@ class _ConsultPageState extends State<ConsultPage> {
             content: '出错了：${e.toString().replaceAll('Exception:', '').trim()}',
           ));
           _loading = false;
+          _streamingRawContent = '';
           _streamingContent = '';
           _streamingReasoning = null;
           _agentSteps = [];
@@ -287,6 +332,10 @@ class _ConsultPageState extends State<ConsultPage> {
                         Expanded(
                           child: TextField(
                             controller: _controller,
+                            keyboardType: TextInputType.multiline,
+                            textInputAction: TextInputAction.newline,
+                            minLines: 1,
+                            maxLines: 6,
                             decoration: InputDecoration(
                               hintText: '我想买……',
                               border: OutlineInputBorder(
@@ -297,7 +346,6 @@ class _ConsultPageState extends State<ConsultPage> {
                                 vertical: 12,
                               ),
                             ),
-                            onSubmitted: (_) => _send(),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -519,6 +567,7 @@ class _AssistantBubbleContentState extends State<_AssistantBubbleContent> {
   @override
   Widget build(BuildContext context) {
     final hasReasoning = widget.reasoning != null && widget.reasoning!.trim().isNotEmpty;
+    final displayContent = _stripAssistantMetaTags(widget.content);
     final isThinkingActive = widget.loading && hasReasoning;
     final thinkingTitle = hasReasoning
         ? (widget.loading ? '思考中' : '已完成思考')
@@ -560,7 +609,7 @@ class _AssistantBubbleContentState extends State<_AssistantBubbleContent> {
                   ],
                 ),
               )),
-          if (hasReasoning || widget.content.isNotEmpty || widget.loading) ...[
+          if (hasReasoning || displayContent.isNotEmpty || widget.loading) ...[
             const SizedBox(height: 8),
             CustomPaint(
               size: const Size(double.infinity, 8),
@@ -614,7 +663,7 @@ class _AssistantBubbleContentState extends State<_AssistantBubbleContent> {
               ),
             ),
           ),
-          if (widget.content.isNotEmpty || widget.loading) ...[
+          if (displayContent.isNotEmpty || widget.loading) ...[
             const SizedBox(height: 10),
             CustomPaint(
               size: const Size(double.infinity, 12),
@@ -623,8 +672,8 @@ class _AssistantBubbleContentState extends State<_AssistantBubbleContent> {
             const SizedBox(height: 10),
           ],
         ],
-        if (widget.content.isNotEmpty)
-          Text(widget.content, style: const TextStyle(fontSize: 15, height: 1.5))
+        if (displayContent.isNotEmpty)
+          Text(displayContent, style: const TextStyle(fontSize: 15, height: 1.5))
         else if (widget.loading)
           Row(
             children: [

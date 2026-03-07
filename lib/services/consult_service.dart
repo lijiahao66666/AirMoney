@@ -34,11 +34,13 @@ Future<String?> _classifyPurchaseIntentByAi(String userText) async {
 Stream<ConsultStreamChunk> consultStream({
   required List<Map<String, String>> conversationHistory,
   Map<String, double>? recentCategorySpending,
+  bool enableAgentSteps = true,
 }) async* {
   Map<String, double>? filteredSpending;
   final userMsgs = conversationHistory.where((x) => (x['role'] ?? '') == 'user');
   final firstUserContent = userMsgs.isEmpty ? null : (userMsgs.first['content'] ?? '');
-  final needsAgentSteps = firstUserContent != null &&
+  final needsAgentSteps = enableAgentSteps &&
+      firstUserContent != null &&
       firstUserContent.trim().isNotEmpty &&
       recentCategorySpending != null &&
       recentCategorySpending.isNotEmpty;
@@ -46,7 +48,7 @@ Stream<ConsultStreamChunk> consultStream({
   if (needsAgentSteps) {
     // 步骤1：分析购买意图
     yield ConsultStreamChunk(agentSteps: [const AgentStep('分析购买意图')]);
-    final cat = await _classifyPurchaseIntentByAi(firstUserContent!);
+    final cat = await _classifyPurchaseIntentByAi(firstUserContent);
 
     if (cat != null) {
       final amount = recentCategorySpending[cat];
@@ -81,6 +83,9 @@ Stream<ConsultStreamChunk> consultStream({
 
 【风格】自然、有来有回，可以有小幽默和简短评价。敢于说「可以不买」「再等等」。不推销、不讨好。''';
 
+  const noMetaLabelInstruction =
+      '\n\n【输出约束】不要输出任何括号中的“动作/意图标签”，例如（追问细节）、（幽默+理解）、(总结) 等；只输出用户可见的自然回复。';
+
   final messages = <Map<String, String>>[];
   for (var i = 0; i < conversationHistory.length; i++) {
     final m = conversationHistory[i];
@@ -89,7 +94,7 @@ Stream<ConsultStreamChunk> consultStream({
     if (role == 'user') {
       final isFirstUser = !conversationHistory.take(i).any((x) => (x['role'] ?? '') == 'assistant');
       if (isFirstUser) {
-        content = '$userInstruction\n\n---\n【用户说】$content';
+        content = '$userInstruction$noMetaLabelInstruction\n\n---\n【用户说】$content';
         // 仅在首条用户消息附带近期相关支出（已按购买意图过滤为相关分类）
         if (filteredSpending != null && filteredSpending.isNotEmpty) {
           content += '\n\n[近期相关支出] $filteredSpending';
@@ -99,7 +104,7 @@ Stream<ConsultStreamChunk> consultStream({
     messages.add({'role': role, 'content': content});
   }
   if (messages.isEmpty) {
-    messages.add({'role': 'user', 'content': '$userInstruction\n\n---\n【用户说】（等待用户输入）'});
+    messages.add({'role': 'user', 'content': '$userInstruction$noMetaLabelInstruction\n\n---\n【用户说】（等待用户输入）'});
   }
 
   final stream = ApiService.chatCompletionsStream(

@@ -50,6 +50,7 @@ dependencies:
   intl: ^0.19.0
   device_info_plus: ^11.0.0
   uuid: ^4.5.1
+  flutter_slidable: ^3.1.2
 
   # 闹钟提醒
   flutter_local_notifications: ^17.2.3

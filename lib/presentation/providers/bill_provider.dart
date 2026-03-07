@@ -27,6 +27,24 @@ class BillProvider extends ChangeNotifier {
     return id;
   }
 
+  Future<bool> updateBill(Bill bill) async {
+    final id = bill.id;
+    if (id == null) return false;
+    final count = await _repo.updateById(id, bill);
+    await loadRecentBills();
+    return count > 0;
+  }
+
+  Future<bool> deleteBill(int id) async {
+    final count = await _repo.deleteById(id);
+    await loadRecentBills();
+    return count > 0;
+  }
+
+  Future<List<Bill>> getAllBills() async {
+    return _repo.getAllBills();
+  }
+
   Future<double> getTodayExpense() async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
@@ -37,8 +55,11 @@ class BillProvider extends ChangeNotifier {
   Future<double> getWeekExpense() async {
     final now = DateTime.now();
     final weekday = now.weekday;
-    final start = DateTime(now.year, now.month, now.day)
-        .subtract(Duration(days: weekday - 1));
+    final start = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: weekday - 1));
     final end = start.add(const Duration(days: 7));
     return _repo.getTotalInRange(start, end, type: BillType.expense);
   }
@@ -53,13 +74,20 @@ class BillProvider extends ChangeNotifier {
   Future<double> getWeekIncome() async {
     final now = DateTime.now();
     final weekday = now.weekday;
-    final start = DateTime(now.year, now.month, now.day)
-        .subtract(Duration(days: weekday - 1));
+    final start = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: weekday - 1));
     final end = start.add(const Duration(days: 7));
     return _repo.getTotalInRange(start, end, type: BillType.income);
   }
 
-  Future<List<Bill>> getBillsInRange(DateTime start, DateTime end, {BillType? type}) async {
+  Future<List<Bill>> getBillsInRange(
+    DateTime start,
+    DateTime end, {
+    BillType? type,
+  }) async {
     return _repo.getBillsInRange(start, end, type: type);
   }
 
@@ -71,7 +99,11 @@ class BillProvider extends ChangeNotifier {
     return _repo.getCategoryTotalsInRange(start, end, type: type);
   }
 
-  Future<double> getTotalInRange(DateTime start, DateTime end, {BillType? type}) async {
+  Future<double> getTotalInRange(
+    DateTime start,
+    DateTime end, {
+    BillType? type,
+  }) async {
     return _repo.getTotalInRange(start, end, type: type);
   }
 

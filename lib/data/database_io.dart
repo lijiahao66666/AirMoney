@@ -32,7 +32,9 @@ class _SqfliteBillStorage implements BillStorage {
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2 && newVersion >= 2) {
-          await db.execute("ALTER TABLE bills ADD COLUMN type TEXT DEFAULT 'expense'");
+          await db.execute(
+            "ALTER TABLE bills ADD COLUMN type TEXT DEFAULT 'expense'",
+          );
         }
       },
     );
@@ -43,6 +45,19 @@ class _SqfliteBillStorage implements BillStorage {
   Future<int> insert(Bill bill) async {
     final db = await _database;
     return db.insert('bills', bill.toMap());
+  }
+
+  @override
+  Future<int> updateById(int id, Bill bill) async {
+    final db = await _database;
+    final map = bill.toMap()..remove('id');
+    return db.update('bills', map, where: 'id = ?', whereArgs: [id]);
+  }
+
+  @override
+  Future<int> deleteById(int id) async {
+    final db = await _database;
+    return db.delete('bills', where: 'id = ?', whereArgs: [id]);
   }
 
   @override
@@ -63,7 +78,10 @@ class _SqfliteBillStorage implements BillStorage {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> rawQuery(String sql, [List<dynamic>? args]) async {
+  Future<List<Map<String, dynamic>>> rawQuery(
+    String sql, [
+    List<dynamic>? args,
+  ]) async {
     final db = await _database;
     return db.rawQuery(sql, args);
   }

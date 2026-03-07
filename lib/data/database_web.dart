@@ -19,7 +19,9 @@ class _WebBillStorage implements BillStorage {
       final json = prefs.getString(_key);
       if (json != null && json.isNotEmpty) {
         _bills = List<Map<String, dynamic>>.from(
-          (jsonDecode(json) as List).map((e) => Map<String, dynamic>.from(e as Map)),
+          (jsonDecode(json) as List).map(
+            (e) => Map<String, dynamic>.from(e as Map),
+          ),
         );
       }
     } catch (e) {
@@ -42,13 +44,40 @@ class _WebBillStorage implements BillStorage {
     await _ensureLoaded();
     final nextId = _bills.isEmpty
         ? 1
-        : (_bills.map((m) => m['id'] as int? ?? 0).reduce((a, b) => a > b ? a : b) + 1);
+        : (_bills
+                  .map((m) => m['id'] as int? ?? 0)
+                  .reduce((a, b) => a > b ? a : b) +
+              1);
     final m = bill.toMap();
     m['id'] = nextId;
     if (!m.containsKey('type')) m['type'] = 'expense';
     _bills.add(m);
     await _persist();
     return nextId;
+  }
+
+  @override
+  Future<int> updateById(int id, Bill bill) async {
+    await _ensureLoaded();
+    final idx = _bills.indexWhere((m) => (m['id'] as int? ?? -1) == id);
+    if (idx < 0) return 0;
+    final map = bill.toMap()..remove('id');
+    map['id'] = id;
+    _bills[idx] = map;
+    await _persist();
+    return 1;
+  }
+
+  @override
+  Future<int> deleteById(int id) async {
+    await _ensureLoaded();
+    final before = _bills.length;
+    _bills.removeWhere((m) => (m['id'] as int? ?? -1) == id);
+    final removed = before - _bills.length;
+    if (removed > 0) {
+      await _persist();
+    }
+    return removed;
   }
 
   @override
@@ -73,15 +102,25 @@ class _WebBillStorage implements BillStorage {
       if (where.contains('type')) {
         final typeVal = whereArgs.length >= 3 ? whereArgs[2].toString() : null;
         if (typeVal != null) {
-          list = list.where((m) => (m['type'] as String? ?? 'expense') == typeVal).toList();
+          list = list
+              .where((m) => (m['type'] as String? ?? 'expense') == typeVal)
+              .toList();
         }
       }
     }
     if (orderBy != null) {
       if (orderBy.contains('created_at') && orderBy.contains('DESC')) {
-        list.sort((a, b) => (b['created_at'] ?? '').toString().compareTo((a['created_at'] ?? '').toString()));
+        list.sort(
+          (a, b) => (b['created_at'] ?? '').toString().compareTo(
+            (a['created_at'] ?? '').toString(),
+          ),
+        );
       } else if (orderBy.contains('date') && orderBy.contains('DESC')) {
-        list.sort((a, b) => (b['date'] ?? '').toString().compareTo((a['date'] ?? '').toString()));
+        list.sort(
+          (a, b) => (b['date'] ?? '').toString().compareTo(
+            (a['date'] ?? '').toString(),
+          ),
+        );
       }
     }
     if (limit != null && limit > 0) {
@@ -91,12 +130,19 @@ class _WebBillStorage implements BillStorage {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> rawQuery(String sql, [List<dynamic>? args]) async {
+  Future<List<Map<String, dynamic>>> rawQuery(
+    String sql, [
+    List<dynamic>? args,
+  ]) async {
     await _ensureLoaded();
     if (sql.contains('SUM(amount)') && sql.contains('WHERE')) {
-      final startStr = args != null && args.isNotEmpty ? args[0].toString() : '';
+      final startStr = args != null && args.isNotEmpty
+          ? args[0].toString()
+          : '';
       final endStr = args != null && args.length > 1 ? args[1].toString() : '';
-      final filterType = args != null && args.length >= 3 ? args[2].toString() : null;
+      final filterType = args != null && args.length >= 3
+          ? args[2].toString()
+          : null;
       double total = 0;
       for (final m in _bills) {
         final d = m['date'] as String? ?? '';
@@ -109,12 +155,18 @@ class _WebBillStorage implements BillStorage {
           total += (m['amount'] as num?)?.toDouble() ?? 0;
         }
       }
-      return [{'total': total}];
+      return [
+        {'total': total},
+      ];
     }
     if (sql.contains('GROUP BY category')) {
-      final startStr = args != null && args.isNotEmpty ? args[0].toString() : '';
+      final startStr = args != null && args.isNotEmpty
+          ? args[0].toString()
+          : '';
       final endStr = args != null && args.length > 1 ? args[1].toString() : '';
-      final filterType = args != null && args.length >= 3 ? args[2].toString() : null;
+      final filterType = args != null && args.length >= 3
+          ? args[2].toString()
+          : null;
       final map = <String, double>{};
       for (final m in _bills) {
         final d = m['date'] as String? ?? '';
@@ -128,7 +180,9 @@ class _WebBillStorage implements BillStorage {
           map[cat] = (map[cat] ?? 0) + ((m['amount'] as num?)?.toDouble() ?? 0);
         }
       }
-      return map.entries.map((e) => {'category': e.key, 'total': e.value}).toList();
+      return map.entries
+          .map((e) => {'category': e.key, 'total': e.value})
+          .toList();
     }
     return [];
   }
