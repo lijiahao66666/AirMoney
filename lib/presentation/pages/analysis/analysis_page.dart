@@ -799,6 +799,8 @@ class _FilterPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = isDark ? const Color(0xFF252B28) : AppColors.primaryLight;
+    final controlTextColor = isDark ? Colors.white70 : Colors.black87;
+    final controlHintColor = isDark ? Colors.white54 : Colors.black54;
     const double controlHeight = 40;
     const double controlFontSize = 14;
     const BorderRadius controlRadius = BorderRadius.all(Radius.circular(10));
@@ -852,25 +854,34 @@ class _FilterPanel extends StatelessWidget {
                   child: DropdownButtonFormField<String?>(
                     value: filterCategory,
                     isExpanded: true,
-                    style: const TextStyle(fontSize: controlFontSize),
-                    decoration: const InputDecoration(
+                    style: TextStyle(
+                      fontSize: controlFontSize,
+                      color: controlTextColor,
+                    ),
+                    decoration: InputDecoration(
                       hintText: '分类',
-                      hintStyle: TextStyle(fontSize: controlFontSize),
+                      hintStyle: TextStyle(
+                        fontSize: controlFontSize,
+                        color: controlHintColor,
+                      ),
                       border: controlBorder,
                       enabledBorder: controlBorder,
                       focusedBorder: controlBorder,
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(
+                      contentPadding: const EdgeInsets.symmetric(
                         horizontal: 12,
                         vertical: 10,
                       ),
                     ),
                     items: [
-                      const DropdownMenuItem<String?>(
+                      DropdownMenuItem<String?>(
                         value: null,
                         child: Text(
                           '全部',
-                          style: TextStyle(fontSize: controlFontSize),
+                          style: TextStyle(
+                            fontSize: controlFontSize,
+                            color: controlTextColor,
+                          ),
                         ),
                       ),
                       ...categoryOptions.map(
@@ -878,7 +889,10 @@ class _FilterPanel extends StatelessWidget {
                           value: c,
                           child: Text(
                             c,
-                            style: const TextStyle(fontSize: controlFontSize),
+                            style: TextStyle(
+                              fontSize: controlFontSize,
+                              color: controlTextColor,
+                            ),
                           ),
                         ),
                       ),
@@ -894,25 +908,34 @@ class _FilterPanel extends StatelessWidget {
                   child: DropdownButtonFormField<String?>(
                     value: filterPayMethod,
                     isExpanded: true,
-                    style: const TextStyle(fontSize: controlFontSize),
-                    decoration: const InputDecoration(
+                    style: TextStyle(
+                      fontSize: controlFontSize,
+                      color: controlTextColor,
+                    ),
+                    decoration: InputDecoration(
                       hintText: '支付方式',
-                      hintStyle: TextStyle(fontSize: controlFontSize),
+                      hintStyle: TextStyle(
+                        fontSize: controlFontSize,
+                        color: controlHintColor,
+                      ),
                       border: controlBorder,
                       enabledBorder: controlBorder,
                       focusedBorder: controlBorder,
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(
+                      contentPadding: const EdgeInsets.symmetric(
                         horizontal: 12,
                         vertical: 10,
                       ),
                     ),
                     items: [
-                      const DropdownMenuItem<String?>(
+                      DropdownMenuItem<String?>(
                         value: null,
                         child: Text(
                           '全部',
-                          style: TextStyle(fontSize: controlFontSize),
+                          style: TextStyle(
+                            fontSize: controlFontSize,
+                            color: controlTextColor,
+                          ),
                         ),
                       ),
                       ...payMethodOptions.map(
@@ -920,7 +943,10 @@ class _FilterPanel extends StatelessWidget {
                           value: m,
                           child: Text(
                             m,
-                            style: const TextStyle(fontSize: controlFontSize),
+                            style: TextStyle(
+                              fontSize: controlFontSize,
+                              color: controlTextColor,
+                            ),
                           ),
                         ),
                       ),
