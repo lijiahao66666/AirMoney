@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -40,7 +40,6 @@ class _TabHomePageState extends State<TabHomePage> {
   void initState() {
     super.initState();
     _loadTotals();
-    _loadBills();
   }
 
   @override
@@ -85,7 +84,6 @@ class _TabHomePageState extends State<TabHomePage> {
   Future<void> _refreshAllData() async {
     await Future.wait([
       _loadTotals(),
-      _loadBills(),
       context.read<BillProvider>().loadRecentBills(),
     ]);
   }
@@ -334,128 +332,7 @@ class _TabHomePageState extends State<TabHomePage> {
                 ),
               ),
               const SizedBox(height: 24),
-              _SectionTitle(icon: Icons.receipt_long_rounded, label: '最近记录'),
-              const SizedBox(height: 12),
-              _BillFilterPanel(
-                filterType: _filterType,
-                filterCategory: _filterCategory,
-                filterPayMethod: _filterPayMethod,
-                filterDateRange: _filterDateRange,
-                noteController: _noteFilterController,
-                categoryOptions: _categoryOptions,
-                onTypeChanged: (type) {
-                  setState(() {
-                    _filterType = type;
-                    if (_filterCategory != null &&
-                        !_categoryOptions.contains(_filterCategory)) {
-                      _filterCategory = null;
-                    }
-                    _recentBillsExpanded = false;
-                  });
-                },
-                onCategoryChanged: (category) {
-                  setState(() {
-                    _filterCategory = category;
-                    _recentBillsExpanded = false;
-                  });
-                },
-                onPayMethodChanged: (method) {
-                  setState(() {
-                    _filterPayMethod = method;
-                    _recentBillsExpanded = false;
-                  });
-                },
-                onNoteChanged: (_) =>
-                    setState(() => _recentBillsExpanded = false),
-                onPickDateRange: _pickFilterDateRange,
-                onClear: _clearFilters,
-              ),
-              const SizedBox(height: 12),
-              Builder(
-                builder: (_) {
-                  final bills = _filteredBills;
-                  if (_billsLoading && _allBills.isEmpty) {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: CircularProgressIndicator(),
-                      ),
-                    );
-                  }
-                  if (bills.isEmpty) {
-                    if (_allBills.isEmpty) {
-                      return _EmptyHint(
-                        onAdd: () async {
-                          await Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const AddBillPage(),
-                            ),
-                          );
-                          if (mounted) await _refreshAllData();
-                        },
-                      );
-                    }
-                    return _EmptyFilteredHint(onClearFilters: _clearFilters);
-                  }
-                  final total = bills.length;
-                  final showCount = _recentBillsExpanded
-                      ? total
-                      : total.clamp(0, _recentBillsMaxShown);
-                  final hasMore =
-                      total > _recentBillsMaxShown && !_recentBillsExpanded;
 
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: showCount,
-                        itemBuilder: (_, i) {
-                          final b = bills[i];
-                          return _BillTile(
-                            bill: b,
-                            onEdit: () => _editRecentBill(b),
-                            onDelete: () => _deleteRecentBill(b),
-                          );
-                        },
-                      ),
-                      if (hasMore)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: InkWell(
-                            onTap: () =>
-                                setState(() => _recentBillsExpanded = true),
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.expand_more,
-                                    size: 20,
-                                    color: AppColors.primaryGreen,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    '继续查看（共 $total 条）',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: AppColors.primaryGreen,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
             ],
           ),
         ),
@@ -1487,3 +1364,4 @@ class _EmptyHint extends StatelessWidget {
     );
   }
 }
+

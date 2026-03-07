@@ -114,17 +114,32 @@ class ConsultSessionStorage {
   }
 
   /// 更新会话中的最后一条 assistant 消息（流式追加时）
-  static Future<void> updateLastAssistantMessage(String sessionId, String content) async {
+  static Future<void> updateLastAssistantMessage(
+    String sessionId,
+    String content, {
+    String? reasoning,
+    List<AgentStep>? agentSteps,
+  }) async {
     final idx = _sessions.indexWhere((s) => s.id == sessionId);
     if (idx < 0) return;
     final s = _sessions[idx];
     final msgs = List<ConsultMessage>.from(s.messages);
+
+    ConsultMessage build(ConsultMessage? base) => ConsultMessage(
+      role: 'assistant',
+      content: content,
+      reasoning: reasoning ?? base?.reasoning,
+      agentSteps: agentSteps ?? base?.agentSteps,
+    );
+
     if (msgs.isNotEmpty && msgs.last.role == 'assistant') {
-      msgs[msgs.length - 1] = ConsultMessage(role: 'assistant', content: content);
+      msgs[msgs.length - 1] = build(msgs.last);
     } else {
-      msgs.add(ConsultMessage(role: 'assistant', content: content));
+      msgs.add(build(null));
     }
+
     _sessions[idx] = s.copyWith(messages: msgs, updatedAt: DateTime.now());
+    _sessions.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     await save();
   }
 

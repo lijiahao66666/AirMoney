@@ -3,6 +3,59 @@ import '../data/models/consult_session.dart';
 import 'api_service.dart';
 import 'auth_service.dart';
 
+String _normalizeCategoryText(String text) {
+  return text
+      .trim()
+      .replaceAll(RegExp(r'\s+'), '')
+      .replaceAll(
+        RegExp(r'[，。！？、,.!?:：;；【】\[\]\(\)（）《》“”·\-_\/]'),
+        '',
+      );
+}
+
+String? _pickCategoryFromText(String? text, Iterable<String> categories) {
+  if (text == null) return null;
+  final normalized = _normalizeCategoryText(text);
+  if (normalized.isEmpty) return null;
+  for (final category in categories) {
+    final normalizedCategory = _normalizeCategoryText(category);
+    if (normalizedCategory.isEmpty) continue;
+    if (normalized == normalizedCategory ||
+        normalized.contains(normalizedCategory) ||
+        normalizedCategory.contains(normalized)) {
+      return category;
+    }
+  }
+  return null;
+}
+
+MapEntry<String, double>? _findRecentCategoryAmount(
+  Map<String, double> totals,
+  String category,
+) {
+  final direct = totals[category];
+  if (direct != null && direct > 0) {
+    return MapEntry(category, direct);
+  }
+  final normalizedTarget = _normalizeCategoryText(category);
+  if (normalizedTarget.isEmpty) return null;
+  String? matchedKey;
+  var sum = 0.0;
+  for (final entry in totals.entries) {
+    final normalizedKey = _normalizeCategoryText(entry.key);
+    if (normalizedKey.isEmpty) continue;
+    final matched =
+        normalizedKey == normalizedTarget ||
+        normalizedKey.contains(normalizedTarget) ||
+        normalizedTarget.contains(normalizedKey);
+    if (!matched) continue;
+    matchedKey ??= entry.key;
+    sum += entry.value;
+  }
+  if (sum <= 0) return null;
+  return MapEntry(matchedKey ?? category, sum);
+}
+
 /// 让 AI 判断用户购买意图属于哪个支出分类
 Future<String?> classifyPurchaseIntentByAi(String userText) async {
   final t = userText.trim();
@@ -21,8 +74,11 @@ Future<String?> classifyPurchaseIntentByAi(String userText) async {
       ],
       authToken: AuthService.token.isNotEmpty ? AuthService.token : null,
     );
-    final cat = resp.trim().replaceAll(RegExp(r'[。，、\s]+'), '');
-    if (AppConstants.expenseCategories.contains(cat)) return cat;
+    final cleaned = resp.trim().replaceAll(RegExp(r'[。，“”‘’`~\s]+'), '');
+    final cat = _pickCategoryFromText(cleaned, AppConstants.expenseCategories);
+    if (cat != null) return cat;
+    final fallback = _pickCategoryFromText(resp, AppConstants.expenseCategories);
+    if (fallback != null) return fallback;
     return null;
   } catch (_) {
     return null;
@@ -61,24 +117,26 @@ Stream<ConsultStreamChunk> consultStream({
         await classifyPurchaseIntentByAi(analysisTarget);
 
     if (cat != null) {
-      final amount = recentCategorySpending[cat];
+      final matched = _findRecentCategoryAmount(recentCategorySpending, cat);
+      final matchedCategory = matched?.key ?? cat;
+      final amount = matched?.value;
       if (amount != null && amount > 0) {
-        filteredSpending = {cat: amount};
+        filteredSpending = {matchedCategory: amount};
         final amountStr = amount >= 1000
             ? '${(amount / 1000).toStringAsFixed(1)}k'
             : amount.toStringAsFixed(0);
         yield ConsultStreamChunk(
-          agentSteps: [AgentStep('分析购买意图', cat), AgentStep('查询近期支出')],
+          agentSteps: [AgentStep('分析购买意图', cat), AgentStep('同类近30天支出')],
         );
         yield ConsultStreamChunk(
           agentSteps: [
             AgentStep('分析购买意图', cat),
-            AgentStep('查询近期支出', '$cat ¥$amountStr'),
+            AgentStep('同类近30天支出', '$matchedCategory ¥$amountStr'),
           ],
         );
       } else {
         yield ConsultStreamChunk(
-          agentSteps: [AgentStep('分析购买意图', '$cat（无近期支出）')],
+          agentSteps: [AgentStep('分析购买意图', '$cat（近30天无支出）')],
         );
       }
     } else {

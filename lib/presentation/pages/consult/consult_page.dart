@@ -452,7 +452,7 @@ class _ConsultPageState extends State<ConsultPage> {
                             minLines: 1,
                             maxLines: 6,
                             decoration: InputDecoration(
-                              hintText: '我想买……',
+                              hintText: '我想……',
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(24),
                               ),

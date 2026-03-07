@@ -27,7 +27,11 @@ class BillRepository {
     String where = 'date >= ? AND date <= ?';
     List<dynamic> whereArgs = [startStr, endStr];
     if (type != null) {
-      where += " AND type = ?";
+      if (type == BillType.expense) {
+        where += " AND (type = ? OR type IS NULL OR type = '')";
+      } else {
+        where += ' AND type = ?';
+      }
       whereArgs.add(type.value);
     }
     final maps = await _storage.query(
@@ -59,7 +63,11 @@ class BillRepository {
         'SELECT SUM(amount) as total FROM bills WHERE date >= ? AND date <= ?';
     List<dynamic> args = [startStr, endStr];
     if (type != null) {
-      sql += " AND type = ?";
+      if (type == BillType.expense) {
+        sql += " AND (type = ? OR type IS NULL OR type = '')";
+      } else {
+        sql += ' AND type = ?';
+      }
       args.add(type.value);
     }
     final result = await _storage.rawQuery(sql, args);
@@ -74,10 +82,13 @@ class BillRepository {
   }) async {
     final startStr = start.toIso8601String().substring(0, 10);
     final endStr = end.toIso8601String().substring(0, 10);
+    final typeWhere = type == BillType.expense
+        ? "(type = ? OR type IS NULL OR type = '')"
+        : 'type = ?';
     final result = await _storage.rawQuery(
       '''
       SELECT category, SUM(amount) as total
-      FROM bills WHERE date >= ? AND date <= ? AND type = ?
+      FROM bills WHERE date >= ? AND date <= ? AND $typeWhere
       GROUP BY category
     ''',
       [startStr, endStr, type.value],

@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../../../core/theme/app_colors.dart';
+
 import '../../../core/constants.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../data/models/bill.dart';
 import '../../../services/analysis_service.dart';
 import '../../providers/bill_provider.dart';
 import '../../providers/points_provider.dart';
 import '../../widgets/wallet_sheet.dart';
-import 'single_analysis_page.dart';
+import '../add_bill/add_bill_page.dart';
 
 class AnalysisPage extends StatefulWidget {
   const AnalysisPage({super.key});
@@ -18,417 +20,1135 @@ class AnalysisPage extends StatefulWidget {
 }
 
 class _AnalysisPageState extends State<AnalysisPage> {
-  String _period = '本周';
-  String? _result;
-  String? _error;
-  bool _loading = false;
+  final TextEditingController _noteFilterController = TextEditingController();
 
-  DateTime _rangeStart() {
-    final now = DateTime.now();
-    switch (_period) {
-      case '本周':
-        final wd = now.weekday;
-        return DateTime(now.year, now.month, now.day).subtract(Duration(days: wd - 1));
-      case '本月':
-        return DateTime(now.year, now.month, 1);
-      default:
-        return DateTime(now.year, now.month, 1);
+  List<Bill> _allBills = [];
+  bool _loadingBills = false;
+  bool _batchAnalyzing = false;
+
+  BillType? _filterType;
+  String? _filterCategory;
+  String? _filterPayMethod;
+  DateTimeRange? _filterDateRange;
+  String _quickDateRange = 'none';
+
+  String? _batchAnalysisResult;
+  String? _batchAnalysisError;
+
+  Object? _singleAnalysisBillKey;
+  bool _singleAnalysisVisible = false;
+  bool _singleAnalyzing = false;
+  String? _singleAnalysisResult;
+  String? _singleAnalysisError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBills();
+  }
+
+  @override
+  void dispose() {
+    _noteFilterController.dispose();
+    super.dispose();
+  }
+
+  Object _billKey(Bill bill) {
+    return bill.id ?? bill.createdAt.microsecondsSinceEpoch;
+  }
+
+  Future<void> _loadBills() async {
+    if (mounted) {
+      setState(() => _loadingBills = true);
+    }
+    try {
+      final bills = await context.read<BillProvider>().getAllBills();
+      if (!mounted) return;
+      setState(() {
+        _allBills = bills;
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _loadingBills = false);
+      }
     }
   }
 
-  DateTime _rangeEnd() {
-    final now = DateTime.now();
-    switch (_period) {
-      case '本周':
-        final wd = now.weekday;
-        final start = DateTime(now.year, now.month, now.day).subtract(Duration(days: wd - 1));
-        return start.add(const Duration(days: 6));
-      case '本月':
-        return DateTime(now.year, now.month + 1, 0);
-      default:
-        return now;
-    }
+  Future<void> _refreshAllData() async {
+    await Future.wait([
+      _loadBills(),
+      context.read<BillProvider>().loadRecentBills(),
+    ]);
   }
 
-  Future<void> _runPeriodAnalysis() async {
+  List<String> get _categoryOptions {
+    final base = _filterType == BillType.expense
+        ? AppConstants.expenseCategories
+        : _filterType == BillType.income
+            ? AppConstants.incomeCategories
+            : [
+                ...AppConstants.expenseCategories,
+                ...AppConstants.incomeCategories,
+              ];
+
+    final set = <String>{...base};
+    for (final bill in _allBills) {
+      if (_filterType != null && bill.type != _filterType) continue;
+      set.add(bill.category);
+    }
+    final list = set.toList();
+    list.sort();
+    return list;
+  }
+
+  List<String> get _payMethodOptions {
+    final set = <String>{...AppConstants.payMethods};
+    for (final bill in _allBills) {
+      set.add(bill.payMethod);
+    }
+    final list = set.toList();
+    list.sort();
+    return list;
+  }
+
+  List<Bill> get _filteredBills {
+    final noteKeyword = _noteFilterController.text.trim().toLowerCase();
+    final start = _filterDateRange?.start;
+    final end = _filterDateRange?.end;
+
+    final result = _allBills.where((bill) {
+      if (_filterType != null && bill.type != _filterType) return false;
+
+      if (_filterCategory != null && _filterCategory!.isNotEmpty) {
+        if (bill.category != _filterCategory) return false;
+      }
+
+      if (_filterPayMethod != null && _filterPayMethod!.isNotEmpty) {
+        if (bill.payMethod != _filterPayMethod) return false;
+      }
+
+      if (noteKeyword.isNotEmpty &&
+          !bill.note.toLowerCase().contains(noteKeyword)) {
+        return false;
+      }
+
+      if (start != null && end != null) {
+        final day = DateTime(bill.date.year, bill.date.month, bill.date.day);
+        final rangeStart = DateTime(start.year, start.month, start.day);
+        final rangeEnd = DateTime(end.year, end.month, end.day);
+        if (day.isBefore(rangeStart) || day.isAfter(rangeEnd)) return false;
+      }
+
+      return true;
+    }).toList();
+
+    result.sort((a, b) {
+      final byDate = b.date.compareTo(a.date);
+      if (byDate != 0) return byDate;
+      return b.createdAt.compareTo(a.createdAt);
+    });
+
+    return result;
+  }
+
+  List<Bill> get _filteredExpenseBills =>
+      _filteredBills.where((bill) => bill.isExpense).toList();
+
+  bool get _hasFilters {
+    return _filterType != null ||
+        (_filterCategory?.isNotEmpty ?? false) ||
+        (_filterPayMethod?.isNotEmpty ?? false) ||
+        _filterDateRange != null ||
+        _noteFilterController.text.trim().isNotEmpty;
+  }
+
+  void _clearSingleAnalysis() {
+    setState(() {
+      _singleAnalysisBillKey = null;
+      _singleAnalysisVisible = false;
+      _singleAnalyzing = false;
+      _singleAnalysisResult = null;
+      _singleAnalysisError = null;
+    });
+  }
+
+  void _applyThisWeekRange() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final start = today.subtract(Duration(days: today.weekday - 1));
+    setState(() {
+      _quickDateRange = 'week';
+      _filterDateRange = DateTimeRange(start: start, end: today);
+      _batchAnalysisResult = null;
+      _batchAnalysisError = null;
+    });
+  }
+
+  void _applyThisMonthRange() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final start = DateTime(now.year, now.month, 1);
+    setState(() {
+      _quickDateRange = 'month';
+      _filterDateRange = DateTimeRange(start: start, end: today);
+      _batchAnalysisResult = null;
+      _batchAnalysisError = null;
+    });
+  }
+
+  Future<void> _pickFilterDateRange() async {
+    final now = DateTime.now();
+    final initial = _filterDateRange ??
+        DateTimeRange(
+          start: DateTime(now.year, now.month, now.day)
+              .subtract(const Duration(days: 30)),
+          end: DateTime(now.year, now.month, now.day),
+        );
+
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: now,
+      initialDateRange: initial,
+    );
+
+    if (picked == null || !mounted) return;
+    setState(() {
+      _filterDateRange = picked;
+      _quickDateRange = 'custom';
+      _batchAnalysisResult = null;
+      _batchAnalysisError = null;
+    });
+  }
+
+  void _clearFilters() {
+    _noteFilterController.clear();
+    setState(() {
+      _filterType = null;
+      _filterCategory = null;
+      _filterPayMethod = null;
+      _filterDateRange = null;
+      _quickDateRange = 'none';
+      _batchAnalysisResult = null;
+      _batchAnalysisError = null;
+    });
+  }
+
+  Future<void> _editBill(Bill bill) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => AddBillPage(editingBill: bill)),
+    );
+    if (!mounted) return;
+    await _refreshAllData();
+  }
+
+  Future<void> _deleteBill(Bill bill) async {
+    final id = bill.id;
+    if (id == null) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除记录'),
+        content: Text('确定删除这条记录吗？\n${bill.category}  ¥${bill.amount.toStringAsFixed(0)}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+    final deleted = await context.read<BillProvider>().deleteBill(id);
+    if (!mounted) return;
+
+    if (deleted) {
+      if (_singleAnalysisBillKey == _billKey(bill)) {
+        _clearSingleAnalysis();
+      }
+      await _refreshAllData();
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(deleted ? '记录已删除' : '删除失败，请重试'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+  String _buildFilterLabel() {
+    if (_quickDateRange == 'week') return '本周';
+    if (_quickDateRange == 'month') return '本月';
+    if (_filterDateRange != null) {
+      final fmt = DateFormat('MM-dd');
+      return '${fmt.format(_filterDateRange!.start)} ~ ${fmt.format(_filterDateRange!.end)}';
+    }
+    return '当前筛选';
+  }
+
+  Future<void> _runFilteredAnalysis() async {
     final points = context.read<PointsProvider>().balance;
     if (points <= 0) {
-      setState(() => _error = '需要积分，请先签到或登录获取');
+      WalletSheet.show(
+        context,
+        points,
+        () => context.read<PointsProvider>().syncFromServer(),
+      );
       return;
     }
+
+    final expenseBills = _filteredExpenseBills;
+    if (expenseBills.isEmpty) {
+      setState(() {
+        _batchAnalysisResult = '当前筛选下没有支出记录，无法反省。';
+        _batchAnalysisError = null;
+      });
+      return;
+    }
+
     setState(() {
-      _loading = true;
-      _error = null;
+      _batchAnalyzing = true;
+      _batchAnalysisError = null;
     });
+
     try {
-      final bp = context.read<BillProvider>();
-      final start = _rangeStart();
-      final end = _rangeEnd();
-      final bills = await bp.getBillsInRange(start, end, type: BillType.expense);
-      final total = await bp.getTotalInRange(start, end, type: BillType.expense);
-      final catTotals = await bp.getCategoryTotalsInRange(start, end, type: BillType.expense);
-      if (bills.isEmpty) {
-        setState(() {
-          _result = '这段时间没记过账，没法分析。先记几笔再来说反省吧～';
-          _loading = false;
-        });
-        return;
-      }
-      final text = await analyzePeriod(
-        bills: bills,
-        total: total,
-        categoryTotals: catTotals,
-        periodLabel: _period,
+      final total = expenseBills.fold<double>(
+        0,
+        (sum, bill) => sum + bill.amount,
       );
-      if (mounted) {
-        setState(() {
-          _result = text;
-          _loading = false;
-        });
-        context.read<PointsProvider>().syncFromServer();
+      final categoryTotals = <String, double>{};
+      for (final bill in expenseBills) {
+        categoryTotals[bill.category] =
+            (categoryTotals[bill.category] ?? 0) + bill.amount;
       }
+
+      final text = await analyzePeriod(
+        bills: expenseBills,
+        total: total,
+        categoryTotals: categoryTotals,
+        periodLabel: _buildFilterLabel(),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _batchAnalysisResult = text;
+        _batchAnalyzing = false;
+      });
+      context.read<PointsProvider>().syncFromServer();
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString().replaceAll('Exception:', '').trim();
-          _loading = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _batchAnalysisError = e.toString().replaceAll('Exception:', '').trim();
+        _batchAnalyzing = false;
+      });
     }
   }
 
-  void _openSingleAnalysis(Bill bill) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => SingleAnalysisPage(bill: bill)),
-    );
+  Future<void> _runSingleAnalysis(Bill bill) async {
+    if (!bill.isExpense) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('仅支出记录支持单条反省')),
+      );
+      return;
+    }
+
+    final points = context.read<PointsProvider>().balance;
+    if (points <= 0) {
+      WalletSheet.show(
+        context,
+        points,
+        () => context.read<PointsProvider>().syncFromServer(),
+      );
+      return;
+    }
+
+    final billKey = _billKey(bill);
+    setState(() {
+      _singleAnalysisBillKey = billKey;
+      _singleAnalysisVisible = true;
+      _singleAnalyzing = true;
+      _singleAnalysisResult = null;
+      _singleAnalysisError = null;
+    });
+
+    try {
+      final today = DateTime.now();
+      final end = DateTime(today.year, today.month, today.day);
+      final start = end.subtract(const Duration(days: 29));
+      final categoryTotals = await context.read<BillProvider>().getCategoryTotalsInRange(
+            start,
+            end,
+            type: BillType.expense,
+          );
+      Map<String, double>? sameCategoryTotals;
+      final amount = categoryTotals[bill.category];
+      if (amount != null && amount > 0) {
+        sameCategoryTotals = {bill.category: amount};
+      }
+
+      final text = await analyzeSingleBill(
+        bill,
+        categoryTotals7d: sameCategoryTotals,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _singleAnalyzing = false;
+        _singleAnalysisResult = text;
+      });
+      context.read<PointsProvider>().syncFromServer();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _singleAnalyzing = false;
+        _singleAnalysisError = e.toString().replaceAll('Exception:', '').trim();
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = isDark ? const Color(0xFF252B28) : AppColors.primaryLight;
+    final bills = _filteredBills;
+    final expenseCount = _filteredExpenseBills.length;
 
     return Scaffold(
       appBar: AppBar(title: const Text('反省一下')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _SectionCard(
-              icon: Icons.receipt_long_rounded,
-              title: '单次分析',
-              subtitle: '选一笔最近的花销，看看值不值、怎么反省',
-              isDark: isDark,
-              child: Consumer<BillProvider>(
-                builder: (_, bp, __) {
-                  if (bp.loading && bp.recentBills.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: CircularProgressIndicator()),
-                    );
-                  }
-                  final expenses = bp.recentBills
-                      .where((b) => b.isExpense)
-                      .toList();
-                  if (expenses.isEmpty) {
-                    return Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        '还没有支出记录，记几笔再来分析吧～',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    );
-                  }
-                  return ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: expenses.length > 8 ? 8 : expenses.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) {
-                      final b = expenses[i];
-                      return _BillAnalysisTile(
-                        bill: b,
-                        cardBg: cardBg,
-                        isDark: isDark,
-                        onAnalyze: () => _openSingleAnalysis(b),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 20),
-            _SectionCard(
-              icon: Icons.analytics_rounded,
-              title: '周期分析',
-              subtitle: '看看这周/这月花多了没，给点反省建议',
-              isDark: isDark,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(value: '本周', label: Text('本周')),
-                      ButtonSegment(value: '本月', label: Text('本月')),
-                    ],
-                    selected: {_period},
-                    onSelectionChanged: (s) => setState(() => _period = s.first),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: _loading ? null : _runPeriodAnalysis,
-                    icon: _loading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.analytics),
-                    label: Text(_loading ? '反省中...' : '开始反省'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primaryGreen,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _error!,
-                            style: const TextStyle(color: AppColors.expenseRed),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            WalletSheet.show(
-                              context,
-                              context.read<PointsProvider>().balance,
-                              () {
-                                context.read<PointsProvider>().syncFromServer();
-                                setState(() => _error = null);
-                              },
-                            );
-                          },
-                          child: const Text('去获取积分'),
-                        ),
-                      ],
-                    ),
-                  ],
-                  if (_result != null && _result!.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryGreen.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        _result!,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          height: 1.6,
-                        ),
-                      ),
-                    ),
-                  ],
+      body: RefreshIndicator(
+        onRefresh: _refreshAllData,
+        child: _loadingBills && _allBills.isEmpty
+            ? ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const [
+                  SizedBox(height: 180),
+                  Center(child: CircularProgressIndicator()),
                 ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SectionCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool isDark;
-  final Widget child;
-
-  const _SectionCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.isDark,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cardBg = isDark ? const Color(0xFF252B28) : AppColors.primaryLight;
-    final shadow = isDark ? AppColors.cardShadowDark : AppColors.cardShadowLight;
-
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: shadow,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryGreen.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
+              )
+            : CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                      child: _FilterPanel(
+                        filterType: _filterType,
+                        filterCategory: _filterCategory,
+                        filterPayMethod: _filterPayMethod,
+                        filterDateRange: _filterDateRange,
+                        quickDateRange: _quickDateRange,
+                        noteController: _noteFilterController,
+                        categoryOptions: _categoryOptions,
+                        payMethodOptions: _payMethodOptions,
+                        hasFilters: _hasFilters,
+                        onTypeChanged: (type) {
+                          setState(() {
+                            _filterType = type;
+                            if (_filterCategory != null &&
+                                !_categoryOptions.contains(_filterCategory)) {
+                              _filterCategory = null;
+                            }
+                            _batchAnalysisResult = null;
+                            _batchAnalysisError = null;
+                          });
+                        },
+                        onCategoryChanged: (value) {
+                          setState(() {
+                            _filterCategory = value;
+                            _batchAnalysisResult = null;
+                            _batchAnalysisError = null;
+                          });
+                        },
+                        onPayMethodChanged: (value) {
+                          setState(() {
+                            _filterPayMethod = value;
+                            _batchAnalysisResult = null;
+                            _batchAnalysisError = null;
+                          });
+                        },
+                        onNoteChanged: (_) {
+                          setState(() {
+                            _batchAnalysisResult = null;
+                            _batchAnalysisError = null;
+                          });
+                        },
+                        onPickDateRange: _pickFilterDateRange,
+                        onSelectWeek: _applyThisWeekRange,
+                        onSelectMonth: _applyThisMonthRange,
+                        onClearDateRange: () {
+                          setState(() {
+                            _filterDateRange = null;
+                            _quickDateRange = 'none';
+                            _batchAnalysisResult = null;
+                            _batchAnalysisError = null;
+                          });
+                        },
+                        onClearFilters: _clearFilters,
+                      ),
+                    ),
                   ),
-                  child: Icon(icon, color: AppColors.primaryGreen, size: 24),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: cardBg,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: isDark
+                              ? AppColors.cardShadowDark
+                              : AppColors.cardShadowLight,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '当前筛选：共 ${bills.length} 条，支出可反省 ${expenseCount} 条',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: isDark ? Colors.white70 : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    onPressed: _batchAnalyzing
+                                        ? null
+                                        : _runFilteredAnalysis,
+                                    icon: _batchAnalyzing
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white,
+                                            ),
+                                          )
+                                        : const Icon(Icons.analytics_rounded),
+                                    label: Text(
+                                      _batchAnalyzing
+                                          ? '反省中...'
+                                          : '反省当前筛选全部数据',
+                                    ),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: AppColors.primaryGreen,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                OutlinedButton(
+                                  onPressed: _hasFilters ? _clearFilters : null,
+                                  child: const Text('清空筛选'),
+                                ),
+                              ],
+                            ),
+                            if (_batchAnalysisError != null) ...[
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _batchAnalysisError!,
+                                      style: const TextStyle(
+                                        color: AppColors.expenseRed,
+                                      ),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: () {
+                                      WalletSheet.show(
+                                        context,
+                                        context.read<PointsProvider>().balance,
+                                        () => context
+                                            .read<PointsProvider>()
+                                            .syncFromServer(),
+                                      );
+                                    },
+                                    child: const Text('去获取积分'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            if (_batchAnalysisResult != null &&
+                                _batchAnalysisResult!.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryGreen.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  _batchAnalysisResult!,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    height: 1.6,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+                      child: Text(
+                        '记录列表',
                         style: TextStyle(
-                          fontSize: 17,
+                          fontSize: 16,
                           fontWeight: FontWeight.w600,
                           color: isDark ? Colors.white : Colors.black87,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            child,
-          ],
-        ),
+                  if (bills.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _EmptyRecords(
+                        hasAnyBill: _allBills.isNotEmpty,
+                        onAdd: () async {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const AddBillPage(),
+                            ),
+                          );
+                          if (!mounted) return;
+                          await _refreshAllData();
+                        },
+                        onClearFilters: _clearFilters,
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate((_, i) {
+                          final bill = bills[i];
+                          final billKey = _billKey(bill);
+                          final showInlinePanel =
+                              _singleAnalysisVisible && _singleAnalysisBillKey == billKey;
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Column(
+                              children: [
+                                _RecordTile(
+                                  bill: bill,
+                                  onReflect: bill.isExpense
+                                      ? () => _runSingleAnalysis(bill)
+                                      : null,
+                                  onEdit: () => _editBill(bill),
+                                  onDelete: () => _deleteBill(bill),
+                                ),
+                                if (showInlinePanel)
+                                  _InlineAnalysisPanel(
+                                    loading: _singleAnalyzing,
+                                    result: _singleAnalysisResult,
+                                    error: _singleAnalysisError,
+                                    onCollapse: _clearSingleAnalysis,
+                                  ),
+                              ],
+                            ),
+                          );
+                        }, childCount: bills.length),
+                      ),
+                    ),
+                ],
+              ),
       ),
     );
   }
 }
 
-class _BillAnalysisTile extends StatelessWidget {
-  final Bill bill;
-  final Color cardBg;
-  final bool isDark;
-  final VoidCallback onAnalyze;
+class _FilterPanel extends StatelessWidget {
+  final BillType? filterType;
+  final String? filterCategory;
+  final String? filterPayMethod;
+  final DateTimeRange? filterDateRange;
+  final String quickDateRange;
+  final TextEditingController noteController;
+  final List<String> categoryOptions;
+  final List<String> payMethodOptions;
+  final bool hasFilters;
+  final ValueChanged<BillType?> onTypeChanged;
+  final ValueChanged<String?> onCategoryChanged;
+  final ValueChanged<String?> onPayMethodChanged;
+  final ValueChanged<String> onNoteChanged;
+  final VoidCallback onPickDateRange;
+  final VoidCallback onSelectWeek;
+  final VoidCallback onSelectMonth;
+  final VoidCallback onClearDateRange;
+  final VoidCallback onClearFilters;
 
-  const _BillAnalysisTile({
+  const _FilterPanel({
+    required this.filterType,
+    required this.filterCategory,
+    required this.filterPayMethod,
+    required this.filterDateRange,
+    required this.quickDateRange,
+    required this.noteController,
+    required this.categoryOptions,
+    required this.payMethodOptions,
+    required this.hasFilters,
+    required this.onTypeChanged,
+    required this.onCategoryChanged,
+    required this.onPayMethodChanged,
+    required this.onNoteChanged,
+    required this.onPickDateRange,
+    required this.onSelectWeek,
+    required this.onSelectMonth,
+    required this.onClearDateRange,
+    required this.onClearFilters,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? const Color(0xFF252B28) : AppColors.primaryLight;
+
+    String dateText = '日期范围';
+    if (filterDateRange != null) {
+      final fmt = DateFormat('yyyy-MM-dd');
+      dateText =
+          '${fmt.format(filterDateRange!.start)} ~ ${fmt.format(filterDateRange!.end)}';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: isDark ? AppColors.cardShadowDark : AppColors.cardShadowLight,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SegmentedButton<BillType?>(
+            segments: const [
+              ButtonSegment<BillType?>(value: null, label: Text('全部')),
+              ButtonSegment<BillType?>(
+                value: BillType.expense,
+                label: Text('支出'),
+              ),
+              ButtonSegment<BillType?>(
+                value: BillType.income,
+                label: Text('收入'),
+              ),
+            ],
+            selected: {filterType},
+            onSelectionChanged: (value) => onTypeChanged(value.first),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String?>(
+                  value: filterCategory,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: '分类',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: [
+                    const DropdownMenuItem<String?>(value: null, child: Text('全部')),
+                    ...categoryOptions.map(
+                      (c) => DropdownMenuItem<String?>(value: c, child: Text(c)),
+                    ),
+                  ],
+                  onChanged: onCategoryChanged,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: DropdownButtonFormField<String?>(
+                  value: filterPayMethod,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: '支付方式',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: [
+                    const DropdownMenuItem<String?>(value: null, child: Text('全部')),
+                    ...payMethodOptions.map(
+                      (m) => DropdownMenuItem<String?>(value: m, child: Text(m)),
+                    ),
+                  ],
+                  onChanged: onPayMethodChanged,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: noteController,
+                  onChanged: onNoteChanged,
+                  decoration: const InputDecoration(
+                    hintText: '备注',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton.icon(
+                onPressed: onPickDateRange,
+                icon: const Icon(Icons.date_range_rounded),
+                label: Text(dateText),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('本周'),
+                selected: quickDateRange == 'week',
+                onSelected: (_) => onSelectWeek(),
+              ),
+              ChoiceChip(
+                label: const Text('本月'),
+                selected: quickDateRange == 'month',
+                onSelected: (_) => onSelectMonth(),
+              ),
+              if (filterDateRange != null)
+                ActionChip(
+                  label: const Text('清除日期'),
+                  onPressed: onClearDateRange,
+                ),
+              if (hasFilters)
+                ActionChip(
+                  label: const Text('清空全部筛选'),
+                  onPressed: onClearFilters,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+class _RecordTile extends StatelessWidget {
+  final Bill bill;
+  final VoidCallback? onReflect;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _RecordTile({
     required this.bill,
-    required this.cardBg,
-    required this.isDark,
-    required this.onAnalyze,
+    required this.onReflect,
+    required this.onEdit,
+    required this.onDelete,
   });
 
   IconData _iconFromName(String iconName) {
     switch (iconName) {
-      case 'restaurant': return Icons.restaurant;
-      case 'directions_car': return Icons.directions_car;
-      case 'shopping_cart': return Icons.shopping_cart;
-      case 'movie': return Icons.movie;
-      case 'home': return Icons.home;
-      case 'local_hospital': return Icons.local_hospital;
-      case 'school': return Icons.school;
-      case 'work': return Icons.work;
-      case 'emoji_events': return Icons.emoji_events;
-      case 'handyman': return Icons.handyman;
-      case 'trending_up': return Icons.trending_up;
-      case 'redeem': return Icons.redeem;
-      default: return Icons.more_horiz;
+      case 'restaurant':
+        return Icons.restaurant;
+      case 'directions_car':
+        return Icons.directions_car;
+      case 'shopping_cart':
+        return Icons.shopping_cart;
+      case 'movie':
+        return Icons.movie;
+      case 'home':
+        return Icons.home;
+      case 'local_hospital':
+        return Icons.local_hospital;
+      case 'school':
+        return Icons.school;
+      case 'work':
+        return Icons.work;
+      case 'emoji_events':
+        return Icons.emoji_events;
+      case 'handyman':
+        return Icons.handyman;
+      case 'trending_up':
+        return Icons.trending_up;
+      case 'redeem':
+        return Icons.redeem;
+      default:
+        return Icons.more_horiz;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final iconName = AppConstants.categoryIcons[bill.category] ?? 'more_horiz';
     final icon = _iconFromName(iconName);
+    final isIncome = bill.isIncome;
+    final amountColor = isIncome ? AppColors.primaryGreen : AppColors.expenseRed;
+    final prefix = isIncome ? '+' : '-';
+    final cardBg = isDark ? const Color(0xFF252B28) : AppColors.primaryLight;
+    final shadow = isDark ? AppColors.cardShadowDark : AppColors.cardShadowLight;
+    final id = bill.id ?? bill.createdAt.millisecondsSinceEpoch;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onAnalyze,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: cardBg,
+    return Slidable(
+      key: ValueKey('analysis-bill-$id'),
+      endActionPane: ActionPane(
+        motion: const DrawerMotion(),
+        extentRatio: 0.44,
+        children: [
+          SlidableAction(
+            onPressed: (_) => onEdit(),
+            backgroundColor: AppColors.primaryGreen,
+            foregroundColor: Colors.white,
+            icon: Icons.edit_rounded,
+            label: '编辑',
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: (isDark ? Colors.white : Colors.black).withOpacity(0.06),
-            ),
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: AppColors.expenseRed.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: AppColors.expenseRed, size: 20),
+          SlidableAction(
+            onPressed: (_) => onDelete(),
+            backgroundColor: Colors.redAccent,
+            foregroundColor: Colors.white,
+            icon: Icons.delete_outline_rounded,
+            label: '删除',
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ],
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: shadow,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: amountColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${bill.category} ¥${bill.amount.toStringAsFixed(0)}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                        color: isDark ? Colors.white : Colors.black87,
-                      ),
+              child: Icon(icon, color: amountColor, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${isIncome ? '收入' : '支出'} · ${bill.category}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                      color: isDark ? Colors.white : Colors.black87,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      bill.note.isEmpty
-                          ? DateFormat('yyyy-MM-dd').format(bill.date)
-                          : '${bill.note} · ${DateFormat('yyyy-MM-dd').format(bill.date)}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    bill.note.isEmpty
+                        ? '${bill.payMethod} · ${DateFormat('yyyy-MM-dd').format(bill.date)}'
+                        : '${bill.note} · ${bill.payMethod} · ${DateFormat('yyyy-MM-dd').format(bill.date)}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryGreen.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  '分析',
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '$prefix¥${bill.amount.toStringAsFixed(0)}',
                   style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primaryGreen,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: amountColor,
                   ),
                 ),
+                const SizedBox(height: 6),
+                if (onReflect != null)
+                  InkWell(
+                    onTap: onReflect,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryGreen.withOpacity(0.14),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        '反省',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.primaryGreen,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InlineAnalysisPanel extends StatelessWidget {
+  final bool loading;
+  final String? result;
+  final String? error;
+  final VoidCallback onCollapse;
+
+  const _InlineAnalysisPanel({
+    required this.loading,
+    required this.result,
+    required this.error,
+    required this.onCollapse,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasContent =
+        (result?.isNotEmpty ?? false) || (error?.isNotEmpty ?? false);
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primaryGreen.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                '单条反省',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
+              const Spacer(),
+              if (!loading && hasContent)
+                TextButton.icon(
+                  onPressed: onCollapse,
+                  icon: const Icon(Icons.expand_less_rounded, size: 16),
+                  label: const Text('收起'),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
             ],
           ),
+          const SizedBox(height: 6),
+          if (loading)
+            Row(
+              children: const [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 8),
+                Text('反省中...'),
+              ],
+            )
+          else if (error != null && error!.isNotEmpty)
+            Text(
+              error!,
+              style: const TextStyle(color: AppColors.expenseRed, height: 1.5),
+            )
+          else if (result != null && result!.isNotEmpty)
+            Text(
+              result!,
+              style: const TextStyle(fontSize: 14, height: 1.6),
+            )
+          else
+            const SizedBox.shrink(),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyRecords extends StatelessWidget {
+  final bool hasAnyBill;
+  final VoidCallback onAdd;
+  final VoidCallback onClearFilters;
+
+  const _EmptyRecords({
+    required this.hasAnyBill,
+    required this.onAdd,
+    required this.onClearFilters,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (hasAnyBill) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.filter_alt_off_rounded, size: 48, color: Colors.grey[400]),
+              const SizedBox(height: 10),
+              Text(
+                '当前筛选下没有记录',
+                style: TextStyle(fontSize: 15, color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(onPressed: onClearFilters, child: const Text('清空筛选')),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.receipt_long_rounded, size: 56, color: Colors.grey[400]),
+            const SizedBox(height: 10),
+            Text(
+              '还没有账单记录',
+              style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+            ),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.add),
+              label: const Text('记一笔'),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.primaryGreen),
+            ),
+          ],
         ),
       ),
     );
