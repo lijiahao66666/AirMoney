@@ -1,37 +1,36 @@
-# AirMoney 部署说明
+# AirMoney 閮ㄧ讲璇存槑
 
-## 服务器配置（宝塔）
+## 鏈嶅姟鍣ㄩ厤缃紙瀹濆锛?
 
-### money.air-inc.top（同站部署，参考 AirTranslate）
+### money.air-inc.top锛堝悓绔欓儴缃诧紝鍙傝€?AirTranslate锛?
+**涓€涓珯鐐瑰悓鏃舵彁渚?HTML 鍜?API**锛?
 
-**一个站点同时提供 HTML 和 API**：
+- **绫诲瀷**锛欻TML 绔欑偣 + 鍙嶅悜浠ｇ悊
+- **澶囨鍓?*锛氱粦瀹?`122.51.10.98:8083`
+- **澶囨鍚?*锛歮oney.air-inc.top:80
+- **鏍硅矾寰?*锛欶lutter Web 鏋勫缓鐨勯潤鎬佹枃浠?
+- **/api 璺緞**锛氬弽鍚戜唬鐞嗗埌 `http://127.0.0.1:9002`锛堝皢 `/api/xxx` 杞彂鍒板悗绔?`/xxx`锛?
 
-- **类型**：HTML 站点 + 反向代理
-- **备案前**：绑定 `122.51.10.98:8083`
-- **备案后**：money.air-inc.top:80
-- **根路径**：Flutter Web 构建的静态文件
-- **/api 路径**：反向代理到 `http://127.0.0.1:9002`（将 `/api/xxx` 转发到后端 `/xxx`）
-
-### 3. 启动后端
+### 3. 鍚姩鍚庣
 
 ```bash
 cd server
-cp .env.example .env   # 填写 TENCENT_SECRET_ID、TENCENT_SECRET_KEY、API_KEY
-npm install   # 如需要
-node app.js   # 或使用 pm2 守护
+cp .env.example .env   # 濉啓 TENCENT_SECRET_ID銆乀ENCENT_SECRET_KEY銆丄PI_KEY
+npm install   # 濡傞渶瑕?
+node app.js   # 鎴栦娇鐢?pm2 瀹堟姢
 ```
 
-确保 PM2 或 systemd 将端口设为 9002。
+纭繚 PM2 鎴?systemd 灏嗙鍙ｈ涓?9002銆?
 
-## 打包
+## 鎵撳寘
 
-### 构建配置
+### 鏋勫缓閰嶇疆
 
-编辑 `scripts/build_config.ps1`：
+缂栬緫 `scripts/build_config.ps1`锛?
 
-- `$UseIpMode = $true`：备案前，使用公网 IP
-- `$UseIpMode = $false`：备案后，使用域名
-- `$API_KEY`：与 server/.env 一致
+- `$UseIpMode = $true`锛氬妗堝墠锛屼娇鐢ㄥ叕缃?IP
+- `$UseIpMode = $false`锛氬妗堝悗锛屼娇鐢ㄥ煙鍚?
+- `$API_KEY`锛氫笌 server/.env 涓€鑷?
 
 ### Web
 
@@ -39,9 +38,8 @@ node app.js   # 或使用 pm2 守护
 .\scripts\build_web_release.ps1
 ```
 
-- 输出：`build/web/`、`airmoney-web.zip`
-- 部署：将 `build/web/` 内容上传到 money.air-inc.top 站点根目录
-- 备案前访问：http://122.51.10.98:8083
+- 杈撳嚭锛歚build/web/`銆乣airmoney-web.zip`
+- 閮ㄧ讲锛氬皢 `build/web/` 鍐呭涓婁紶鍒?money.air-inc.top 绔欑偣鏍圭洰褰?- 澶囨鍓嶈闂細http://122.51.10.98:8083
 
 ### Android APK
 
@@ -49,30 +47,30 @@ node app.js   # 或使用 pm2 守护
 .\scripts\build_android_apk_arm64_release.ps1
 ```
 
-- 输出：`build/app/outputs/flutter-apk/app-release.apk`
+- 杈撳嚭锛歚build/app/outputs/flutter-apk/app-release.apk`
 
-### Android AAB（应用商店）
+### Android AAB锛堝簲鐢ㄥ晢搴楋級
 
 ```powershell
 .\scripts\build_android_aab_release.ps1
 ```
 
-- 输出：`build/app/outputs/bundle/release/app-release.aab`
+- 杈撳嚭锛歚build/app/outputs/bundle/release/app-release.aab`
 
-### iOS IPA（Mac）
+### iOS IPA锛圡ac锛?
 
 ```bash
 chmod +x scripts/build_ios_ipa_release.sh
 ./scripts/build_ios_ipa_release.sh
 ```
 
-- 编辑脚本中的 `USE_IP_MODE`、`API_KEY` 与 build_config.ps1 保持一致
-- 输出：`build/ios/ipa/*.ipa`
+- 缂栬緫鑴氭湰涓殑 `USE_IP_MODE`銆乣API_KEY` 涓?build_config.ps1 淇濇寔涓€鑷?
+- 杈撳嚭锛歚build/ios/ipa/*.ipa`
 
-## 端口汇总
+## 绔彛姹囨€?
 
-| 服务       | 备案前 (IP)          | 备案后 (域名)              |
+| 鏈嶅姟       | 澶囨鍓?(IP)          | 澶囨鍚?(鍩熷悕)              |
 |------------|----------------------|----------------------------|
 | Web + API  | 122.51.10.98:8083    | money.air-inc.top         |
-| API 路径   | :8083/api            | /api                      |
-| 后端进程   | 127.0.0.1:9002       | 127.0.0.1:9002            |
+| API 璺緞   | :8083/api            | /api                      |
+| 鍚庣杩涚▼   | 127.0.0.1:9002       | 127.0.0.1:9002            |
