@@ -1,39 +1,51 @@
-﻿﻿﻿﻿# AirMoney（哎呀钱）
+# AirMoney（哎呀钱）
 
-AirMoney 是一款智能个人财务管理应用，主打“买前咨询、买后记账与分析反思”。它帮助用户理性消费，清晰掌握财务状况。
+AirMoney 是一款以买前咨询、买后反思为核心理念的个人理财与记账应用。客户端聚焦记账、分析与 AI 咨询，服务端提供混元大模型代理、积分系统与短信登录能力。
 
-## 项目结构
+## 功能概览
 
-本项目采用统一的结构设计：
+- 记账与分类：日常收支记录、分类统计、筛选与查询。
+- AI 咨询（该不该花）：分析用户购买意图，结合近 30 天同类支出给出建议。
+- AI 消费分析：对单笔与周期账单生成简短分析与反思建议。
+- 账单提醒：支持多时段提醒与本地通知。
+- 积分系统：显示积分余额与消费情况。
 
-- **client/**: Flutter 客户端源代码。
-- **server/**: Node.js 后端服务。
-- **scripts/**: 构建和部署脚本。
-- **docs/**: 产品设计 (PRODUCT_DESIGN.md)、UI 设计 (UI_DESIGN.md) 和部署文档。
+## 客户端功能细节
 
-## 技术栈
+- 咨询服务：调用混元 ChatCompletions，支持流式输出与推理内容。
+- 消费分析：提供单笔与周期分析提示词生成。
+- 提醒系统：本地通知 + 多时间段提醒配置。
 
-- **客户端**: Flutter
-  - 状态管理: `provider`
-  - 数据库: `sqflite` (本地存储)
-  - 提醒: `flutter_local_notifications`, `timezone`
-  - UI: `flutter_slidable`
-- **服务端**: Node.js
-- **部署**: 宝塔面板
+## 服务端功能
 
-## 部署指南
+- 代理腾讯云混元 API（ChatCompletions），服务端完成签名。
+- 本地积分计费与用户数据存储。
+- 远程配置接口 `/config`。
+- 短信验证码登录与鉴权。
 
-### Web 端部署
+## 目录结构
 
-1. 运行构建脚本：
-   ```powershell
-   ./scripts/build_web_release.ps1
-   ```
-2. 将构建产物上传至云服务器宝塔面板的 HTML 站点目录。
-3. 访问域名：[money.air-inc.top](https://money.air-inc.top)
+- client/：Flutter 客户端
+- server/：Node.js 服务端
+- scripts/：构建与部署脚本
+- README.md：项目说明
 
-### 服务端部署
+## 本地运行
 
-1. 将 `server/` 目录上传至服务器。
-2. 在服务器上运行 `npm install` 安装依赖。
-3. 使用 PM2 启动服务。
+客户端：
+```
+cd client
+flutter pub get
+flutter run
+```
+
+服务端：
+```
+cd server
+npm install
+node app.js
+```
+
+## 参考
+
+项目规范请查看 `product_rule.md`。
