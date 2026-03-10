@@ -1,59 +1,54 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
+# Force Ignore Gradle Caches
+**/.gradle/
+**/.gradle-cache/
+**/build/
+**/.dart_tool/
+
+# General
 .DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
-
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
 .idea/
-.tmp_appdata
-.tmp_localappdata
+.vscode/
+*.iml
+*.log
+*.zip
+*.tar.gz
+__pycache__/
+.trae/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
 
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
+# Flutter/Dart (Global)
+.flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-/build/
-/coverage/
 
-# Symbolication related
-app.*.symbols
-
-# Obfuscation related
-app.*.map.json
-
-# Android signing (DO NOT commit keystore or passwords)
-*.jks
+# Android
+**/.gradle/
+**/.gradle-cache/
+**/local.properties
 **/key.properties
+**/*.jks
+**/*.keystore
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-软著材料
-.gradle-cache/
+# Web
+flutter-web-run.log
 
-# Air app runtime (unified)
-server/.env
-server/data/
-server/logs/
-air*-web.zip
+# Environment & Secrets
+**/.env
+**/config.json
+
+# Temp & Cache
+.tmp_appdata/
+.tmp_localappdata/
+client/.metadata
+
+# Specific
+test/*.epub
+软著材料/
+logs/
+data/
+models/
