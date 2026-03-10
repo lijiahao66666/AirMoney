@@ -51,3 +51,9 @@ app.*.map.json
 /android/app/release
 软著材料
 .gradle-cache/
+
+# Air app runtime (unified)
+server/.env
+server/data/
+server/logs/
+air*-web.zip
