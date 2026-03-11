@@ -289,7 +289,7 @@ class _TabHomePageState extends State<TabHomePage> {
           child: SizedBox(
             width: double.infinity,
             child: Text(
-              '浙ICP备2026011869号-1',
+              '浙ICP备2026011869号-4A',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 11,

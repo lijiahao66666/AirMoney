@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'airmoney',
       script: 'app.js',
-      cwd: '/www/airmoney/server',
+      cwd: '/www/airmoney',
       instances: 1,
       exec_mode: 'fork',
       autorestart: true,
