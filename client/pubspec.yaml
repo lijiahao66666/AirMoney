@@ -1,5 +1,5 @@
-﻿name: air_money
-description: "AirMoney锛堝搸鍛€閽憋級- 鍦ㄦ剰浣犵殑姣忎竴绗旈挶銆備拱鍓嶅挩璇€佷拱鍚庤璐︿笌鍒嗘瀽鍙嶆€濄€?
+name: air_money
+description: "AirMoney（哎呀钱）- 在意你的每一笔钱，买前咨询、买后记账与分析复盘。"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
