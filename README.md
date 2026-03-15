@@ -1,58 +1,281 @@
 # AirMoney（哎呀钱）
 
-AirMoney 是一款以买前咨询、买后反思为核心理念的个人理财与记账应用。客户端聚焦记账、分析与 AI 咨询，服务端提供混元大模型代理、积分系统与短信登录能力。
+## 应用信息
+
+**应用名称**：AirMoney（哎呀钱）
+
+**应用分类**：记账理财
+
+**精简标题**：AI 智能记账助手
+
+**应用简介**：支持记账分类与账单管理、AI 买前咨询（消费决策建议）、AI 消费分析（账单洞察）、账单提醒与通知、短信验证码登录、每日签到、积分系统、用户数据统计的个人记账助手应用。
 
 ## 功能概览
 
-- 记账与分类：日常收支记录、分类统计、筛选与查询。
-- AI 咨询（该不该花）：分析用户购买意图，结合近 30 天同类支出给出建议。
-- AI 消费分析：对单笔与周期账单生成简短分析与反思建议。
-- 账单提醒：支持多时段提醒与本地通知。
-- 积分系统：显示积分余额与消费情况。
+- **记账管理**：快速记账、分类管理、账单列表、月度统计
+- **AI 买前咨询**：输入商品信息获取消费建议、性价比分析、购买时机建议
+- **AI 消费分析**：账单趋势分析、消费习惯洞察、异常消费提醒
+- **账单提醒**：定期账单提醒、预算超支提醒
+- **用户系统**：短信验证码登录、积分初始化、每日签到、积分查询
+- **数据统计**：DAU 统计、活跃用户追踪
 
-## 客户端功能细节
+## 技术架构
 
-- 咨询服务：调用混元 ChatCompletions，支持流式输出与推理内容。
-- 消费分析：提供单笔与周期分析提示词生成。
-- 提醒系统：本地通知 + 多时间段提醒配置。
+**客户端**：Flutter（支持 Android/iOS/Web）
+- 状态管理：Provider
+- 本地存储：SharedPreferences + SQLite
+- AI 模型：腾讯混元在线 API
 
-## 服务端功能
+**服务端**：Node.js + PM2
+- 端口：9002
+- 代理腾讯云混元 API，服务端完成签名
+- 本地 JSON 存储积分、用户数据、统计数据
+- 短信验证码登录（腾讯云 SMS）
 
-- 代理腾讯云混元 API（ChatCompletions），服务端完成签名。
-- 本地积分计费与用户数据存储。
-- 远程配置接口 `/config`。
-- 短信验证码登录与鉴权。
+## 部署说明
 
-## 目录结构
+### 一、服务器部署（腾讯云 + 宝塔面板）
 
-- client/：Flutter 客户端
-- server/：Node.js 服务端
-- scripts/：构建与部署脚本
-- README.md：项目说明
+#### 1. Web 端部署
 
-## 本地运行
+**步骤 1：构建 Web 产物**
 
-客户端：
+在本地项目根目录执行：
+```powershell
+cd scripts
+./build_web_release.ps1
 ```
-cd client
-flutter pub get
-flutter run
+
+构建产物位于 `client/build/web/` 目录。
+
+**步骤 2：上传 Web 产物**
+
+将 `client/build/web/` 目录下的所有文件上传到服务器：
+```
+/www/wwwroot/money.air-inc.top/
 ```
 
-服务端：
+**步骤 3：宝塔面板配置**
+
+1. 登录宝塔面板
+2. 点击【网站】→【添加站点】
+3. 选择【HTML站点】，填写：
+   - 域名：`money.air-inc.top`
+   - 根目录：`/www/wwwroot/money.air-inc.top`
+4. 点击【提交】创建站点
+
+**步骤 4：配置 Nginx**
+
+1. 在宝塔面板点击站点名称 →【设置】→【配置文件】
+2. 将 `server/nginx.money.air-inc.top.conf` 的内容复制进去
+3. 关键配置说明：
+   - `root /www/wwwroot/money.air-inc.top;` - Web 根目录
+   - `/api` 代理到 `http://127.0.0.1:9002` - 服务端端口
+4. 点击【保存】
+
+**步骤 5：申请 SSL 证书（可选）**
+
+在宝塔面板点击【SSL】→【Let's Encrypt】→ 申请免费证书
+
+#### 2. 服务端部署
+
+**步骤 1：上传服务端代码**
+
+将 `server/` 目录上传到服务器：
 ```
+/www/airmoney/
+```
+
+**步骤 2：安装依赖**
+
+SSH 登录服务器后执行：
+```bash
+cd /www/airmoney
+npm install
+```
+
+**步骤 3：配置环境变量**
+
+创建 `.env` 文件：
+```bash
+cp .env.example .env
+nano .env
+```
+
+填写以下配置：
+```bash
+TENCENT_SECRET_ID=你的腾讯云SecretId
+TENCENT_SECRET_KEY=你的腾讯云SecretKey
+SMS_APP_ID=短信应用AppId
+SMS_SIGN=短信签名
+SMS_TEMPLATE_ID=短信模板Id
+SMS_TEMPLATE_PARAM_COUNT=1
+API_KEY=你的API密钥（可选）
+PORT=9002
+```
+
+**步骤 4：创建配置文件**
+
+创建 `config.json`：
+```json
+{
+  "checkin_enabled": true,
+  "checkin_points": 5000,
+  "initial_grant_points": 500000,
+  "ad_enabled": false,
+  "ad_reward_points": 2000,
+  "ad_daily_limit": 10,
+  "purchase_enabled": false,
+  "latest_version": "1.0.0",
+  "min_version": "1.0.0",
+  "update_url": "",
+  "update_message": "",
+  "force_update": false,
+  "announcement": ""
+}
+```
+
+**步骤 5：使用 PM2 启动服务**
+
+```bash
+cd /www/airmoney
+pm2 start ecosystem.config.cjs --env production
+```
+
+或直接启动：
+```bash
+pm2 start app.js --name airmoney
+```
+
+**步骤 6：设置开机自启**
+
+```bash
+pm2 save
+pm2 startup
+```
+
+**步骤 7：验证服务**
+
+```bash
+pm2 status
+curl http://127.0.0.1:9002/health
+```
+
+### 二、本地部署
+
+#### 1. Web 端部署
+
+**步骤 1：构建 Web 产物**
+
+```powershell
+cd scripts
+./build_web_release.ps1
+```
+
+**步骤 2：启动本地静态服务器**
+
+方法一：使用 http-server
+```bash
+npm install -g http-server
+http-server client/build/web -p 8080
+```
+
+方法二：使用 Python
+```bash
+cd client/build/web
+python -m http.server 8080
+```
+
+**步骤 3：访问应用**
+
+浏览器打开 `http://localhost:8080`
+
+#### 2. 服务端部署
+
+**步骤 1：安装依赖**
+
+```bash
 cd server
 npm install
+```
+
+**步骤 2：配置环境变量**
+
+创建 `.env` 文件（同服务器部署）
+
+**步骤 3：启动服务**
+
+```bash
 node app.js
 ```
 
-## Deployment
+或使用 PM2：
+```bash
+pm2 start app.js --name airmoney-local
+```
 
-- Web build: run `scripts/build_web_release.ps1`.
-- Output: `client/build/web/` and `airmoney-web.zip` in repo root.
-- Web deploy: upload the zip or `client/build/web/` to your static HTML site.
-- Server deploy: upload `server/`, run `npm install`, then `pm2 start app.js --name airmoney`.
-- Config: edit `scripts/build_config.ps1` before building.
+服务运行在 `http://localhost:9002`
+
+**步骤 4：配置 Web 端 API 地址**
+
+如果 Web 端和服务端不在同一端口，需要修改构建配置：
+```powershell
+# 编辑 scripts/build_config.ps1
+$apiBaseUrl = "http://localhost:9002"
+```
+
+然后重新构建 Web 产物。
+
+## 目录结构
+
+```
+AirMoney/
+├── client/                    # Flutter 客户端
+│   ├── android/               # Android 原生代码
+│   ├── ios/                   # iOS 原生代码
+│   ├── lib/                   # Dart 源代码
+│   ├── web/                   # Web 资源
+│   └── scripts/               # 构建脚本
+├── server/                    # Node.js 服务端
+│   ├── app.js                 # 主服务入口
+│   ├── ecosystem.config.cjs   # PM2 配置
+│   ├── nginx.*.conf           # Nginx 配置示例
+│   ├── config.json            # 远程配置
+│   └── data/                  # 数据目录
+│       ├── points/            # 积分数据
+│       ├── users/             # 用户数据
+│       └── stats/             # 统计数据
+├── scripts/                   # 构建脚本
+└── README.md
+```
+
+## 常用命令
+
+```bash
+# 查看 PM2 服务状态
+pm2 status
+
+# 查看日志
+pm2 logs airmoney
+
+# 重启服务
+pm2 restart airmoney
+
+# 停止服务
+pm2 stop airmoney
+
+# 重新部署 Web
+cd scripts && ./build_web_release.ps1
+# 然后上传 client/build/web/ 到服务器
+```
+
+## 注意事项
+
+- 首次部署前需申请腾讯云 API 密钥（SecretId/SecretKey）
+- 短信登录需开通腾讯云 SMS 服务
+- 生产环境建议配置 `API_KEY` 进行接口鉴权
+- 移动端打包需配置签名证书
+- 本地部署时注意跨域问题
 
 ## 参考
 
