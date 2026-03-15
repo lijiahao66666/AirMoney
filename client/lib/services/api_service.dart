@@ -29,14 +29,12 @@ class ApiService {
   static const _prefDeviceId = 'device_id';
 
   static String get proxyUrl => const String.fromEnvironment(
-        'AIRMONEY_API_PROXY_URL',
-        defaultValue: 'http://localhost:9001',
-      );
+    'AIRMONEY_API_PROXY_URL',
+    defaultValue: 'http://localhost:9001',
+  );
 
-  static String get apiKey => const String.fromEnvironment(
-        'AIRMONEY_API_KEY',
-        defaultValue: '',
-      );
+  static String get apiKey =>
+      const String.fromEnvironment('AIRMONEY_API_KEY', defaultValue: '');
 
   static String _deviceId = '';
 
@@ -98,10 +96,11 @@ class ApiService {
       'payload': {
         'Model': 'hunyuan-2.0-instruct-20251111',
         'Stream': false,
-        'Messages': messages.map((m) => {
-              'Role': m['role']!,
-              'Content': m['content'] ?? '',
-            }).toList(),
+        'Messages': messages
+            .map((m) => {'Role': m['role']!, 'Content': m['content'] ?? ''})
+            .toList(),
+        'EnableEnhancement': true,
+        'ForceSearchEnhancement': true,
       },
     };
     final resp = await http
@@ -154,12 +153,11 @@ class ApiService {
       'payload': {
         'Model': model,
         'Stream': true,
-        'Messages': messages.map((m) => {
-              'Role': m['role']!,
-              'Content': m['content'] ?? '',
-            }).toList(),
+        'Messages': messages
+            .map((m) => {'Role': m['role']!, 'Content': m['content'] ?? ''})
+            .toList(),
         'EnableEnhancement': true,
-        'ForceSearchEnhancement': false,
+        'ForceSearchEnhancement': true,
       },
     };
     final request = http.Request('POST', url);
@@ -170,7 +168,9 @@ class ApiService {
     final client = http.Client();
     late http.StreamedResponse streamedResp;
     try {
-      streamedResp = await client.send(request).timeout(const Duration(seconds: 120));
+      streamedResp = await client
+          .send(request)
+          .timeout(const Duration(seconds: 120));
     } catch (e) {
       client.close();
       rethrow;
@@ -212,7 +212,8 @@ class ApiService {
       }
       if (buffer.trim().isNotEmpty) {
         for (final c in _processSseLine(buffer.trim())) {
-          if (c.pointsBalance != null) onPointsBalanceChanged?.call(c.pointsBalance!);
+          if (c.pointsBalance != null)
+            onPointsBalanceChanged?.call(c.pointsBalance!);
           yield c;
         }
       }
@@ -241,7 +242,9 @@ class ApiService {
 
       final pointsBalance = json['PointsBalance'];
       if (pointsBalance != null) {
-        final b = (pointsBalance is num) ? pointsBalance.toInt() : int.tryParse(pointsBalance.toString());
+        final b = (pointsBalance is num)
+            ? pointsBalance.toInt()
+            : int.tryParse(pointsBalance.toString());
         if (b != null) {
           yield ChatStreamChunk(content: '', pointsBalance: b);
         }
@@ -276,7 +279,9 @@ class ApiService {
       }
 
       final finishReason = choice['FinishReason'];
-      if (finishReason != null && finishReason.toString().isNotEmpty && finishReason.toString() != 'null') {
+      if (finishReason != null &&
+          finishReason.toString().isNotEmpty &&
+          finishReason.toString() != 'null') {
         yield ChatStreamChunk(content: '', isComplete: true);
       }
     } catch (_) {}
@@ -285,11 +290,13 @@ class ApiService {
   /// 积分初始化（返回余额）
   static Future<int> initPoints({String? authToken}) async {
     final url = Uri.parse('$proxyUrl/points/init');
-    final resp = await http.post(
-      url,
-      headers: headers(authToken: authToken),
-      body: jsonEncode({}),
-    ).timeout(const Duration(seconds: 10));
+    final resp = await http
+        .post(
+          url,
+          headers: headers(authToken: authToken),
+          body: jsonEncode({}),
+        )
+        .timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) return 0;
     final j = jsonDecode(resp.body);
     final b = j['balance'];
@@ -299,11 +306,13 @@ class ApiService {
   /// 获取积分余额
   static Future<int> getPointsBalance({String? authToken}) async {
     final url = Uri.parse('$proxyUrl/points/balance');
-    final resp = await http.post(
-      url,
-      headers: headers(authToken: authToken),
-      body: jsonEncode({}),
-    ).timeout(const Duration(seconds: 10));
+    final resp = await http
+        .post(
+          url,
+          headers: headers(authToken: authToken),
+          body: jsonEncode({}),
+        )
+        .timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) return 0;
     final j = jsonDecode(resp.body);
     final b = j['balance'];
@@ -313,11 +322,13 @@ class ApiService {
   /// 签到
   static Future<CheckinResult> checkin({String? authToken}) async {
     final url = Uri.parse('$proxyUrl/checkin');
-    final resp = await http.post(
-      url,
-      headers: headers(authToken: authToken),
-      body: jsonEncode({}),
-    ).timeout(const Duration(seconds: 10));
+    final resp = await http
+        .post(
+          url,
+          headers: headers(authToken: authToken),
+          body: jsonEncode({}),
+        )
+        .timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) {
       String msg = '签到失败';
       try {
@@ -340,11 +351,13 @@ class ApiService {
   /// 签到状态
   static Future<bool> getCheckinStatus({String? authToken}) async {
     final url = Uri.parse('$proxyUrl/checkin/status');
-    final resp = await http.post(
-      url,
-      headers: headers(authToken: authToken),
-      body: jsonEncode({}),
-    ).timeout(const Duration(seconds: 10));
+    final resp = await http
+        .post(
+          url,
+          headers: headers(authToken: authToken),
+          body: jsonEncode({}),
+        )
+        .timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) return false;
     final j = jsonDecode(resp.body);
     return j['checkedInToday'] == true;
@@ -354,7 +367,9 @@ class ApiService {
   static Future<Map<String, dynamic>> getConfig() async {
     final base = proxyUrl.trim().endsWith('/') ? proxyUrl : '$proxyUrl/';
     final url = Uri.parse('${base}config');
-    final resp = await http.get(url, headers: headers()).timeout(const Duration(seconds: 10));
+    final resp = await http
+        .get(url, headers: headers())
+        .timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) return {};
     try {
       return Map<String, dynamic>.from(jsonDecode(resp.body));

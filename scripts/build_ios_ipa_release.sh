@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,10 +13,9 @@ cd "${PROJECT_ROOT}"
 USE_IP_MODE=0
 
 if [ "$USE_IP_MODE" = "1" ]; then
-  # 涓?HTML 鍚岀珯 8083锛孉PI 鍦?/api 璺緞
   PROXY_URL="http://122.51.10.98:8083/api"
 else
-  PROXY_URL="http://money.air-inc.top/api"
+  PROXY_URL="https://money.air-inc.top/api"
 fi
 
 # 涓?server/.env 鐨?API_KEY 涓€鑷?

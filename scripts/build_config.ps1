@@ -1,13 +1,11 @@
-﻿# AirMoney 鏋勫缓閰嶇疆 - Web / Android / iOS 鍏辩敤
+# AirMoney 鏋勫缓閰嶇疆 - Web / Android / iOS 鍏辩敤
 # 鍒囨崲澶囨鍓?鍚庯細淇敼 $UseIpMode锛屾墍鏈夋墦鍖呰剼鏈細鍚屾浣跨敤
 $UseIpMode = $false   # 澶囨鍓嶆敼涓?$true锛涘妗堝悗鏀逛负 $false
 
 if ($UseIpMode) {
-  # 澶囨鍓嶏細涓?HTML 鍚岀珯 8083锛孉PI 鍦?/api 璺緞
   $PROXY_URL = "http://122.51.10.98:8083/api"
 } else {
-  # 澶囨鍚庯細浣跨敤鍩熷悕锛堜笌璁块棶鍩熷悕鍚屾簮锛岄伩鍏?CORS锛?
-  $PROXY_URL = "http://money.air-inc.top/api"
+  $PROXY_URL = "https://money.air-inc.top/api"
 }
 
 # API Key锛堜笌 server/.env 鐨?API_KEY 涓€鑷达紝鍚﹀垯绛惧埌绛夋帴鍙ｄ細杩斿洖 401锛?
